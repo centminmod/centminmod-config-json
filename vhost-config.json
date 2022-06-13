@@ -1,0 +1,43 @@
+{
+    "data": [
+        {
+            "domain": "domain.com",
+            "domain-preferred": "www.domain.com",
+            "domain-parked1": "sub1.domain.com",
+            "domain-parked2": "sub2.domain.com",
+            "domain-parked3": "sub3.domain.com",
+            "email": "email@domain",
+            "https": "yes",
+            "origin-sslcert": "letsencrypt",
+            "cloudflare": "yes",
+            "cloudflare-accountid": "aabbcc",
+            "cloudflare-zoneid": "zoneid",
+            "cloudflare-api-token": "xxxyyyzzz",
+            "cloudflare-min-tls": "1.2",
+            "cloudflare-tiered-cache": "yes",
+            "cloudflare-cache-reserve": "yes",
+            "cloudflare-crawler-hints": "yes",
+            "cloudflare-respect-origin-headers": "yes",
+            "type": "site",
+            "mysqldb1": "db1",
+            "mysqluser1": "dbuser1",
+            "mysqlpass1": "dbpass1",
+            "mysqldb2": "db2",
+            "mysqluser2": "dbuser2",
+            "mysqlpass2": "dbpass2",
+            "mysqldb3": "db3",
+            "mysqluser3": "dbuser3",
+            "mysqlpass3": "dbpass3",
+            "mysqldb4": "db4",
+            "mysqluser4": "dbuser4",
+            "mysqlpass4": "dbpass4",
+            "mysqldb5": "db5",
+            "mysqluser5": "dbuser5",
+            "mysqlpass5": "dbpass5",
+            "webroot": "/home/nginx/domains/domain.com/public",
+            "index": "/home/nginx/domains/domain.com/public/index.html",
+            "robotsfile": "/path/to/robots.txt",
+            "cronjobfile": "/path/to/cronjobfile.txt"
+        }
+    ]
+}
