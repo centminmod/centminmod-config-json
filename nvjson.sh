@@ -68,6 +68,7 @@ DEBUG_MODE='y'
 #############################################################################
 # Cloudflare settings
 CF_ENABLE_CACHE_RESERVE='n'
+CF_ENABLE_CRAWLER_HINTS='n'
 #############################################################################
 
 parse_file() {
@@ -113,6 +114,7 @@ parse_file() {
   index=$(echo "$file_parsed" | jq -r '."index"')
   robotsfile=$(echo "$file_parsed" | jq -r '."robotsfile"')
   cronjobfile=$(echo "$file_parsed" | jq -r '."cronjobfile"')
+  cfplan=$(curl -sX GET -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" "https://api.cloudflare.com/client/v4/zones/$cloudflare_zoneid" | jq -r '.result.plan.legacy_id')
   if [[ "$DEBUG_MODE" = [yY] ]]; then
     echo
     echo "---------------------------------------------------------------------"
@@ -123,6 +125,7 @@ parse_file() {
     echo "---------------------------------------------------------------------"
     echo "Variable checks:"
     echo "---------------------------------------------------------------------"
+    echo "cfplan=$cfplan"
     echo "domain=$domain"
     echo "domain_preferred=$domain-preferred"
     echo "domain_parked1=$domain-parked1"
@@ -179,7 +182,7 @@ create_vhost() {
         -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type:application/json" | jq -r
   echo
   echo "---------------------------------------------------------------------"
-  echo "Setup Cloudflare DNS API Token For: $domain"
+  echo "Setup Cloudflare DNS API Token For: $domain (CF $cfplan plan)"
   echo "---------------------------------------------------------------------"
   echo
   echo "CF_DNSAPI_GLOBAL='y'"
@@ -206,9 +209,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -227,9 +233,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -248,9 +257,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -268,9 +280,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -288,9 +303,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -308,9 +326,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
@@ -328,31 +349,39 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
-    echo "-------------------------------------------------"
-    echo "Enable CF Crawler Hints"
-    echo "-------------------------------------------------"
-    set=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
-            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
-            --data '{"feature":"crawlhints_enabled","value":true}' )
-    check_cmd=$(echo "$set" | jq -r '.success')
-    if [[ "$check_cmd" = 'false' ]]; then
-      if [[ "$DEBUG_MODE" = [yY] ]]; then
-        echo "error: CF API command failed."
+    if [[ "$CF_ENABLE_CRAWLER_HINTS" = [yY] ]]; then
+      echo "-------------------------------------------------"
+      echo "Enable CF Crawler Hints"
+      echo "-------------------------------------------------"
+      set=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+              --data '{"feature":"crawlhints_enabled","value":true}' )
+      check_cmd=$(echo "$set" | jq -r '.success')
+      if [[ "$check_cmd" = 'false' ]]; then
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "error: CF API command failed."
+          echo "$set" | jq -r
+        else
+          echo "error: CF API command failed."
+        fi
+      elif [[ "$check_cmd" = 'true' ]]; then
+        echo "ok: CF API command succeeded."
+        echo
         echo "$set" | jq -r
-      else
-        echo "error: CF API command failed."
+        echo
+        echo "check setting"
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
-      echo "ok: CF API command succeeded."
-      echo
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
-            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     if [[ "$CF_ENABLE_CACHE_RESERVE" = [yY] ]]; then
       echo "-------------------------------------------------"
@@ -369,8 +398,10 @@ create_vhost() {
         else
           echo "error: CF API command failed."
         fi
-      elif [[ "$check_cmd" = 'success' ]]; then
+      elif [[ "$check_cmd" = 'true' ]]; then
         echo "ok: CF API command succeeded."
+        echo
+        echo "$set" | jq -r
         echo
         curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
@@ -390,9 +421,12 @@ create_vhost() {
       else
         echo "error: CF API command failed."
       fi
-    elif [[ "$check_cmd" = 'success' ]]; then
+    elif [[ "$check_cmd" = 'true' ]]; then
       echo "ok: CF API command succeeded."
       echo
+      echo "$set" | jq -r
+      echo
+      echo "check setting"
       curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
