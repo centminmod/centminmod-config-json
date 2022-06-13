@@ -24,6 +24,7 @@
 #############################################################################
 # {
 #   "domain": "domain.com",
+#   "domain-www": "www.domain.com",
 #   "domain-preferred": "www.domain.com",
 #   "domain-parked1": "sub1.domain.com",
 #   "domain-parked2": "sub2.domain.com",
@@ -62,19 +63,51 @@
 #   "cronjobfile": "/path/to/cronjobfile.txt"
 # }
 #############################################################################
+VER='0.1'
 DT=$(date +"%d%m%y-%H%M%S")
 DEBUG_MODE='y'
 
 #############################################################################
 # Cloudflare settings
+IS_PROXIED='y'
 CF_ENABLE_CACHE_RESERVE='n'
 CF_ENABLE_CRAWLER_HINTS='n'
+
+# Cloudflare DNS API settings
+WORKDIR='/etc/cfapi'
+BIND_ZONE_BACKUPDIR="$WORKDIR/backup-zone-bind"
+
+# Cloudflare API
+endpoint=https://api.cloudflare.com/client/v4/
 #############################################################################
+# Other Settings
+CURL_AGENT="$(curl -V 2>&1 | head -n 1 |  awk '{print $1"/"$2}') nvjson.sh $VER"
+#############################################################################
+if [ ! -d "$BIND_ZONE_BACKUPDIR" ]; then
+  mkdir -p "$BIND_ZONE_BACKUPDIR"
+fi
+if [ -f "$WORKDIR/nvjson.ini" ]; then
+  source "$WORKDIR/nvjson.ini"
+fi
+
+backup_zone_bind() {
+  domain="$1"
+  token="$cloudflare_api_token"
+  curl -4sX GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/export" -H "Content-Type:application/json" -H "Authorization: Bearer $token" > "$BIND_ZONE_BACKUPDIR/cf-zone-bind-export-$domain-$DT.txt"
+  echo
+  echo "---------------------------------------------------------------------"
+  echo "backed up Cloudflare Zone Bind File at:"
+  echo "---------------------------------------------------------------------"
+  echo "$BIND_ZONE_BACKUPDIR/cf-zone-bind-export-$domain-$DT.txt"
+  echo "---------------------------------------------------------------------"
+  echo
+}
 
 parse_file() {
   file="$1"
   file_parsed=$(egrep -v '^#|^\/\*|^\/' "$file" | jq -r '.data[]')
   domain=$(echo "$file_parsed" | jq -r '."domain"')
+  domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
   domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
   domain_parked1=$(echo "$file_parsed" | jq -r '."domain-parked1"')
   domain_parked2=$(echo "$file_parsed" | jq -r '."domain-parked2"')
@@ -127,6 +160,7 @@ parse_file() {
     echo "---------------------------------------------------------------------"
     echo "cfplan=$cfplan"
     echo "domain=$domain"
+    echo "domain_www=$domain_www"
     echo "domain_preferred=$domain-preferred"
     echo "domain_parked1=$domain-parked1"
     echo "domain_parked2=$domain-parked2"
@@ -188,6 +222,72 @@ create_vhost() {
   echo "CF_DNSAPI_GLOBAL='y'"
   echo "CF_Token=\"$cloudflare_api_token\""
   echo "CF_Account_ID=\"$cloudflare_accountid\""
+  echo
+  echo
+  echo "---------------------------------------------------------------------"
+  echo "Setup Cloudflare DNS A For: $domain (CF $cfplan plan)"
+  echo "---------------------------------------------------------------------"
+  SERVERIP_A=$(curl -4s -A "$CURL_AGENT" https://geoip.centminmod.com/v3 | jq -r '.ip')
+  SERVERIP_AAAA=$(curl -6s -A "$CURL_AGENT" https://geoip.centminmod.com/v3 | jq -r '.ip')
+  DNS_CONTENT_A="$SERVERIP_A"
+  DNS_CONTENT_AAAA="$SERVERIP_AAAA"
+  if [[ "$IS_PROXIED" = [yY] ]]; then
+    PROXY_OPT=true
+  else
+    PROXY_OPT=false
+  fi
+  backup_zone_bind "$domain"
+  # create A record
+  if [[ "$DNS_CONTENT_A" && "$domain" ]]; then
+    RECORD_TYPE="A"
+    DNS_RECORD_NAME="$domain"
+    dns_mode=create
+    create_dns_a=$(curl -sX POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+    check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
+    check_create_dns_a_errcode=$(echo "$create_dns_a" | jq -r '.errors[] | .code')
+    if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
+      dns_mode=update
+      # update not create DNS record
+      endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
+      dnsrecid=$(curl -sX GET "https://api.cloudflare.com/client/v4/${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
+      create_dns_a=$(curl -sX PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+      check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
+    fi
+    if [[ "$check_create_dns_a" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+      echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+      echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+    elif [[ "$check_create_dns_a" = 'true' ]]; then
+      echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
+      echo "$create_dns_a" | jq -r
+    fi
+  fi
+  # create AAAA record
+  if {[ "$DNS_CONTENT_AAAA" && "$domain" ]}; then
+    RECORD_TYPE="AAAA"
+    DNS_RECORD_NAME="$domain"
+    create_dns_aaaa=$(curl -sX POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+    check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
+    check_create_dns_aaaa_errcode=$(echo "$create_dns_aaaa" | jq -r '.errors[] | .code')
+    if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
+      dns_mode=update
+      # update not create DNS record
+      endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
+      dnsrecid=$(curl -sX GET "https://api.cloudflare.com/client/v4/${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
+      create_dns_aaaa=$(curl -sX PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+      check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
+    fi
+    if [[ "$check_create_dns_aaaa" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+      echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+      echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+    elif [[ "$check_create_dns_aaaa" = 'true' ]]; then
+      echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
+      echo "$create_dns_aaaa" | jq -r
+    fi
+  fi
   echo
   echo "---------------------------------------------------------------------"
   echo "Adjust Cloudflare Settings For: $domain"

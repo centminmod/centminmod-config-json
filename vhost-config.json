@@ -2,6 +2,7 @@
     "data": [
         {
             "domain": "domain.com",
+            "domain-www": "www.domain.com",
             "domain-preferred": "www.domain.com",
             "domain-parked1": "sub1.domain.com",
             "domain-parked2": "sub2.domain.com",
