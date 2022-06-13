@@ -176,8 +176,7 @@ create_vhost() {
   echo "     -H \"Authorization: Bearer $cloudflare_api_token\" \\"
   echo "     -H \"Content-Type:application/json\""
   curl -sX GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
-        -H "Authorization: Bearer $cloudflare_api_token" \
-        -H "Content-Type:application/json" | jq -r
+        -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type:application/json" | jq -r
   echo
   echo "---------------------------------------------------------------------"
   echo "Setup Cloudflare DNS API Token For: $domain"
@@ -191,82 +190,216 @@ create_vhost() {
   echo "Adjust Cloudflare Settings For: $domain"
   echo "---------------------------------------------------------------------"
   echo
-  echo "-------------------------------------------------"
-  echo "Set CF SSL Mode To Full SSL"
-  echo "-------------------------------------------------"
-  # options are off, flexible, full, strict
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"full"}' | jq
-  echo "-------------------------------------------------"
-  echo "Set CF Always Use HTTPS Off"
-  echo "-------------------------------------------------"
-  # options are off, on
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"off"}' | jq
-  echo "-------------------------------------------------"
-  echo "Set CF Automatic HTTPS Rewrites Off"
-  echo "-------------------------------------------------"
-  # options are off, on
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"off"}' | jq
-  echo "-------------------------------------------------"
-  echo "Enable CF Tiered Caching"
-  echo "-------------------------------------------------"
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"on"}' | jq
-  echo "-------------------------------------------------"
-  echo "Set CF Browser Cache TTL = Respect Origin Headers"
-  echo "-------------------------------------------------"
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":0}' | jq
-  echo "-------------------------------------------------"
-  echo "Set CF Minimum TLSv1.2 Version"
-  echo "-------------------------------------------------"
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"1.2"}' | jq
-  echo "-------------------------------------------------"
-  echo "Disable Email Obfuscation (Page Speed Optimization)"
-  echo "-------------------------------------------------"
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"off"}' | jq
-  echo "-------------------------------------------------"
-  echo "Enable CF Crawler Hints"
-  echo "-------------------------------------------------"
-  curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"feature":"crawlhints_enabled","value":true}' | jq
-  if [[ "$CF_ENABLE_CACHE_RESERVE" = [yY] ]]; then
+  if [[ "$cloudflare_zoneid" && "$cloudflare_api_token" ]]; then
     echo "-------------------------------------------------"
-    echo "Enable CF Cache Reserve"
+    echo "Set CF SSL Mode To Full SSL"
     echo "-------------------------------------------------"
-    curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"on"}' | jq
-  fi
-  echo "-------------------------------------------------"
-  echo "Enable HTTP Prioritization"
-  echo "-------------------------------------------------"
-  curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
-          -H "Authorization: Bearer $cloudflare_api_token" \
-          -H "Content-Type: application/json" \
-          --data '{"value":"on"}' | jq
-
+    # options are off, flexible, full, strict
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"full"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Set CF Always Use HTTPS Off"
+    echo "-------------------------------------------------"
+    # options are off, on
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"off"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Set CF Automatic HTTPS Rewrites Off"
+    echo "-------------------------------------------------"
+    # options are off, on
+  set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ automatic_https_rewrites" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"off"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Enable CF Tiered Caching"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"on"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Set CF Browser Cache TTL = Respect Origin Headers"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":0}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Set CF Minimum TLSv1.2 Version"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"1.2"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Disable Email Obfuscation (Page Speed Optimization)"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"off"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    echo "-------------------------------------------------"
+    echo "Enable CF Crawler Hints"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"feature":"crawlhints_enabled","value":true}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+    if [[ "$CF_ENABLE_CACHE_RESERVE" = [yY] ]]; then
+      echo "-------------------------------------------------"
+      echo "Enable CF Cache Reserve"
+      echo "-------------------------------------------------"
+      set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"on"}' )
+      check_cmd=$(echo "$set" | jq -r '.success')
+      if [[ "$check_cmd" = 'false' ]]; then
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "error: CF API command failed."
+          echo "$set" | jq -r
+        else
+          echo "error: CF API command failed."
+        fi
+      elif [[ "$check_cmd" = 'success' ]]; then
+        echo "ok: CF API command succeeded."
+        echo
+        curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
+    fi
+    echo "-------------------------------------------------"
+    echo "Enable HTTP Prioritization"
+    echo "-------------------------------------------------"
+    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+            --data '{"value":"on"}' )
+    check_cmd=$(echo "$set" | jq -r '.success')
+    if [[ "$check_cmd" = 'false' ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "error: CF API command failed."
+        echo "$set" | jq -r
+      else
+        echo "error: CF API command failed."
+      fi
+    elif [[ "$check_cmd" = 'success' ]]; then
+      echo "ok: CF API command succeeded."
+      echo
+      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
+            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    fi
+  else
+    echo
+    echo "$cloudflare_zoneid and $cloudflare_api_token not set"
+  fi # check if $cloudflare_api_token and $cloudflare_zoneid set
   echo
   echo "---------------------------------------------------------------------"
   echo "Nginx Vhost Creation For: $domain"
@@ -304,6 +437,14 @@ create_vhost() {
   if [[ -f "$cronjobfile" || "$DEBUG_MODE" = [yY] ]]; then
     echo
     echo "setup $cronjobfile"
+    echo "mkdir -p /etc/centminmod/cronjobs/"
+    echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+    echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+    echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+    # mkdir -p /etc/centminmod/cronjobs/
+    # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+    # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+    # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
   fi
   echo
   echo
