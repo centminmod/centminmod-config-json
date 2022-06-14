@@ -322,32 +322,61 @@ create_vhost() {
   echo "---------------------------------------------------------------------"
   echo
   if [[ "$cloudflare_zoneid" && "$cloudflare_api_token" ]]; then
-    echo "-------------------------------------------------"
-    echo "Set CF SSL Mode To Full SSL"
-    echo "-------------------------------------------------"
-    # options are off, flexible, full, strict
-    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
-            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
-            --data '{"value":"full"}' )
-    check_cmd=$(echo "$set" | jq -r '.success')
-    if [[ "$check_cmd" = 'false' ]]; then
-      if [[ "$DEBUG_MODE" = [yY] ]]; then
-        echo "error: CF API command failed."
+    if [[ "$https" = 'yes' ]]; then
+      echo "-------------------------------------------------"
+      echo "Set CF SSL Mode To Full SSL"
+      echo "-------------------------------------------------"
+      # options are off, flexible, full, strict
+      set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+              --data '{"value":"full"}' )
+      check_cmd=$(echo "$set" | jq -r '.success')
+      if [[ "$check_cmd" = 'false' ]]; then
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "error: CF API command failed."
+          echo "$set" | jq -r
+        else
+          echo "error: CF API command failed."
+        fi
+      elif [[ "$check_cmd" = 'true' ]]; then
+        echo "ok: CF API command succeeded."
+        echo
         echo "$set" | jq -r
-      else
-        echo "error: CF API command failed."
+        echo
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "check setting"
+          curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+        fi
       fi
-    elif [[ "$check_cmd" = 'true' ]]; then
-      echo "ok: CF API command succeeded."
-      echo
-      echo "$set" | jq -r
-      echo
-      if [[ "$DEBUG_MODE" = [yY] ]]; then
-        echo "check setting"
-        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
-            -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+    else
+      echo "-------------------------------------------------"
+      echo "Set CF SSL Mode To Flexible SSL"
+      echo "-------------------------------------------------"
+      # options are off, flexible, full, strict
+      set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+              --data '{"value":"flexible"}' )
+      check_cmd=$(echo "$set" | jq -r '.success')
+      if [[ "$check_cmd" = 'false' ]]; then
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "error: CF API command failed."
+          echo "$set" | jq -r
+        else
+          echo "error: CF API command failed."
+        fi
+      elif [[ "$check_cmd" = 'true' ]]; then
+        echo "ok: CF API command succeeded."
+        echo
+        echo "$set" | jq -r
+        echo
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "check setting"
+          curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
+              -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+        fi
       fi
-    fi
+    fi # non-https/https
     echo "-------------------------------------------------"
     echo "Set CF Always Use HTTPS Off"
     echo "-------------------------------------------------"
@@ -589,7 +618,11 @@ create_vhost() {
     ftp_pass=$(pwgen -1cnys 29)
     echo "creating vhost $domain..."
     echo
-    echo "/usr/bin/nv -d $domain -s lelived -u $ftp_pass"
+    if [[ "$https" = 'yes' ]]; then
+      echo "/usr/bin/nv -d $domain -s lelived -u $ftp_pass"
+    else
+      echo "/usr/bin/nv -d $domain -s n -u $ftp_pass"
+    fi
   fi
   echo
   echo "---------------------------------------------------------------------"
