@@ -4,6 +4,8 @@ A work in progress experimental method for creating new Centmin Mod Nginx vhost 
 
 For Cloudflare settings and DNS configuration, you'll need to use Cloudflare API. Cloudflare API, requires you to create your Cloudflare Token API with permissions for edit access to `Zone.Zone`, `Zone.DNS`, `Zone.Zone Settings` and `Zone.Cache Settings` across all Zones at https://dash.cloudflare.com/profile/api-tokens and to grab your Cloudflare Account ID from any of your Cloudflare domain's main dashboard's right side column listing.
 
+![CF API Token Permissions](/screenshots/nvjson-api-token-permissions-01.png)
+
 # nvjson.sh
 
 The `nvjson.sh` tool takes input from a `vhost-config.json` JSON formatted config file that users can create for their relevant Centmin Mod Nginx vhost + Cloudflare settings. 
