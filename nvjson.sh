@@ -66,6 +66,7 @@
 VER='0.1'
 DT=$(date +"%d%m%y-%H%M%S")
 DEBUG_MODE='y'
+SENSITIVE_INFO_MASK='y'
 
 #############################################################################
 # Cloudflare settings
@@ -175,30 +176,54 @@ parse_file() {
     echo "https=$https"
     echo "origin_sslcert=$origin-sslcert"
     echo "cloudflare=$cloudflare"
-    echo "cloudflare_accountid=$cloudflare-accountid"
-    echo "cloudflare_zoneid=$cloudflare-zoneid"
-    echo "cloudflare_api_token=$cloudflare-api-token"
+    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+      echo "cloudflare_accountid=*********"
+      echo "cloudflare_zoneid=*********"
+      echo "cloudflare_api_token=*********"
+    else
+      echo "cloudflare_accountid=$cloudflare-accountid"
+      echo "cloudflare_zoneid=$cloudflare-zoneid"
+      echo "cloudflare_api_token=$cloudflare-api-token"
+    fi
     echo "cloudflare_min_tls=$cloudflare-min-tls"
     echo "cloudflare_tiered_cache=$cloudflare-tiered-cache"
     echo "cloudflare_cache_reserve=$cloudflare-cache-reserve"
     echo "cloudflare_crawler_hints=$cloudflare-crawler-hints"
     echo "cloudflare_respect_origin_headers=$cloudflare-respect-origin-headers"
     echo "type=$type"
-    echo "mysqldb1=$mysqldb1"
-    echo "mysqluser1=$mysqluser1"
-    echo "mysqlpass1=$mysqlpass1"
-    echo "mysqldb2=$mysqldb2"
-    echo "mysqluser2=$mysqluser2"
-    echo "mysqlpass2=$mysqlpass2"
-    echo "mysqldb3=$mysqldb3"
-    echo "mysqluser3=$mysqluser3"
-    echo "mysqlpass3=$mysqlpass3"
-    echo "mysqldb4=$mysqldb4"
-    echo "mysqluser4=$mysqluser4"
-    echo "mysqlpass4=$mysqlpass4"
-    echo "mysqldb5=$mysqldb5"
-    echo "mysqluser5=$mysqluser5"
-    echo "mysqlpass5=$mysqlpass5"
+    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+      echo "mysqldb1=mysqldb1_mask"
+      echo "mysqluser1=mysqluser1_mask"
+      echo "mysqlpass1=mysqlpass1_mask"
+      echo "mysqldb2=mysqldb2_mask"
+      echo "mysqluser2=mysqluser2_mask"
+      echo "mysqlpass2=mysqlpass2_mask"
+      echo "mysqldb3=mysqldb3_mask"
+      echo "mysqluser3=mysqluser3_mask"
+      echo "mysqlpass3=mysqlpass3_mask"
+      echo "mysqldb4=mysqldb4_mask"
+      echo "mysqluser4=mysqluser4_mask"
+      echo "mysqlpass4=mysqlpass4_mask"
+      echo "mysqldb5=mysqldb5_mask"
+      echo "mysqluser5=mysqluser5_mask"
+      echo "mysqlpass5=mysqlpass5_mask"
+    else
+      echo "mysqldb1=$mysqldb1"
+      echo "mysqluser1=$mysqluser1"
+      echo "mysqlpass1=$mysqlpass1"
+      echo "mysqldb2=$mysqldb2"
+      echo "mysqluser2=$mysqluser2"
+      echo "mysqlpass2=$mysqlpass2"
+      echo "mysqldb3=$mysqldb3"
+      echo "mysqluser3=$mysqluser3"
+      echo "mysqlpass3=$mysqlpass3"
+      echo "mysqldb4=$mysqldb4"
+      echo "mysqluser4=$mysqluser4"
+      echo "mysqlpass4=$mysqlpass4"
+      echo "mysqldb5=$mysqldb5"
+      echo "mysqluser5=$mysqluser5"
+      echo "mysqlpass5=$mysqlpass5"
+    fi
     echo "webroot=$webroot"
     echo "index=$index"
     echo "robotsfile=$robotsfile"
@@ -210,9 +235,14 @@ parse_file() {
 create_vhost() {
   file="$1"
   parse_file "$file"
+  if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+    domain_name_label=domain.com
+  else
+    domain_name_label=$domain
+  fi
   echo
   echo "---------------------------------------------------------------------"
-  echo "Check Cloudflare API Token For: $domain"
+  echo "Check Cloudflare API Token For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   echo
   echo "curl -X GET \"https://api.cloudflare.com/client/v4/user/tokens/verify\" \\"
@@ -222,19 +252,25 @@ create_vhost() {
         -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type:application/json" | jq -r
   echo
   echo "---------------------------------------------------------------------"
-  echo "Setup Cloudflare DNS API Token For: $domain (CF $cfplan plan)"
+  echo "Setup Cloudflare DNS API Token For: $domain_name_label (CF $cfplan plan)"
   echo "---------------------------------------------------------------------"
   echo
-  echo "CF_DNSAPI_GLOBAL='y'"
-  echo "CF_Token=\"$cloudflare_api_token\""
-  echo "CF_Account_ID=\"$cloudflare_accountid\""
+  if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+    echo "CF_DNSAPI_GLOBAL='y'"
+    echo "CF_Token=\"cloudflare_api_token\""
+    echo "CF_Account_ID=\"cloudflare_accountid\""
+  else
+    echo "CF_DNSAPI_GLOBAL='y'"
+    echo "CF_Token=\"$cloudflare_api_token\""
+    echo "CF_Account_ID=\"$cloudflare_accountid\""
+  fi
   echo
   echo
   echo "---------------------------------------------------------------------"
-  echo "Setup Cloudflare DNS A For: $domain (CF $cfplan plan)"
+  echo "Setup Cloudflare DNS A For: $domain_name_label (CF $cfplan plan)"
   echo "---------------------------------------------------------------------"
-  SERVERIP_A=$(curl -4s -A "$CURL_AGENT" https://geoip.centminmod.com/v3 | jq -r '.ip')
-  SERVERIP_AAAA=$(curl -6s -A "$CURL_AGENT" https://geoip.centminmod.com/v3 | jq -r '.ip')
+  SERVERIP_A=$(curl -4s -A "$CURL_AGENT IPv4" https://geoip.centminmod.com/v3 | jq -r '.ip')
+  SERVERIP_AAAA=$(curl -6s -A "$CURL_AGENT IPv6" https://geoip.centminmod.com/v3 | jq -r '.ip')
   DNS_CONTENT_A="$SERVERIP_A"
   DNS_CONTENT_AAAA="$SERVERIP_AAAA"
   if [[ "$IS_PROXIED" = [yY] ]]; then
@@ -271,7 +307,11 @@ create_vhost() {
         echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
       elif [[ "$check_create_dns_a" = 'true' ]]; then
         echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
-        echo "$create_dns_a" | jq -r
+        if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+          echo "$create_dns_a" | sed -e "s|$cloudflare_zoneid|CF_ZONEID|g" -e "s|$DNS_CONTENT_A|111.222.333.444|g" -e "s|$dn|domain.com|g" -e "s|$domain|domain.com|g" | jq -r
+        else
+          echo "$create_dns_a" | jq -r
+        fi
       fi
     fi
     if [[ "$CF_DNS_IPFOUR_ONLY" != [yY] ]]; then
@@ -297,7 +337,11 @@ create_vhost() {
           echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
         elif [[ "$check_create_dns_aaaa" = 'true' ]]; then
           echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
-          echo "$create_dns_aaaa" | jq -r
+          if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+            echo "$create_dns_aaaa" | sed -e "s|$cloudflare_zoneid|CF_ZONEID|g" -e "s|$DNS_CONTENT_A|111.222.333.444|g" -e "s|$dn|domain.com|g" -e "s|$domain|domain.com|g" | jq -r
+          else
+            echo "$create_dns_aaaa" | jq -r
+          fi
         fi
       fi
     elif [[ "$CF_DNS_IPFOUR_ONLY" = [yY] ]]; then
@@ -318,7 +362,7 @@ create_vhost() {
   done # domain_array_list loop
   echo
   echo "---------------------------------------------------------------------"
-  echo "Adjust Cloudflare Settings For: $domain"
+  echo "Adjust Cloudflare Settings For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   echo
   if [[ "$cloudflare_zoneid" && "$cloudflare_api_token" ]]; then
@@ -611,22 +655,29 @@ create_vhost() {
   fi # check if $cloudflare_api_token and $cloudflare_zoneid set
   echo
   echo "---------------------------------------------------------------------"
-  echo "Nginx Vhost Creation For: $domain"
+  echo "Nginx Vhost Creation For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   echo
   if [ -f /usr/bin/nv ]; then
     ftp_pass=$(pwgen -1cnys 29)
-    echo "creating vhost $domain..."
+    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+      ftp_pass_label=ftp_password
+    else
+      ftp_pass_label=$ftp_pass
+    fi
+    echo "creating vhost $domain_name_label..."
     echo
     if [[ "$https" = 'yes' ]]; then
-      echo "/usr/bin/nv -d $domain -s lelived -u $ftp_pass"
+      echo "/usr/bin/nv -d $domain_name_label -s lelived -u $ftp_pass_label"
+      # /usr/bin/nv -d $domain -s lelived -u $ftp_pass
     else
-      echo "/usr/bin/nv -d $domain -s n -u $ftp_pass"
+      echo "/usr/bin/nv -d $domain_name_label -s n -u $ftp_pass_label"
+      # /usr/bin/nv -d $domain -s n -u $ftp_pass
     fi
   fi
   echo
   echo "---------------------------------------------------------------------"
-  echo "Create MySSQL Databases For: $domain"
+  echo "Create MySSQL Databases For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   echo
   if [ -f /usr/local/src/centminmod/addons/mysqladmin_shell.sh ]; then
@@ -649,28 +700,42 @@ create_vhost() {
   fi
   echo
   echo "---------------------------------------------------------------------"
-  echo "Setup Robots.txt File For: $domain"
+  echo "Setup Robots.txt File For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   if [[ -f "$robotsfile" || "$DEBUG_MODE" = [yY] ]]; then
     echo
     # echo "copying $robotsfile to ${webroot}/robots.txt"
-    echo "\cp -af $robotsfile ${webroot}/robots.txt"
+    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+      echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|$domain|domain.com|g"
+    else
+      echo "\cp -af $robotsfile ${webroot}/robots.txt"
+    fi
   fi
   echo
   echo "---------------------------------------------------------------------"
-  echo "Setup Cronjobs For: $domain"
+  echo "Setup Cronjobs For: $domain_name_label"
   echo "---------------------------------------------------------------------"
   if [[ -f "$cronjobfile" || "$DEBUG_MODE" = [yY] ]]; then
     echo
     echo "setup $cronjobfile"
     echo "mkdir -p /etc/centminmod/cronjobs/"
-    echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-    echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-    echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-    # mkdir -p /etc/centminmod/cronjobs/
-    # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-    # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-    # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+      echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+      echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+      echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+      # mkdir -p /etc/centminmod/cronjobs/
+      # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+    else
+      echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+      echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+      echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+      # mkdir -p /etc/centminmod/cronjobs/
+      # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+    fi
   fi
   echo
   echo

@@ -14,6 +14,7 @@ The `nvjson.sh` tool takes input from a `vhost-config.json` JSON formatted confi
 * better supports adding parked domain names to Centmin Mod Nginx vhost 
 * supports automatically creating user defined MySQL database name/database users/database user passwords
 * as well as optionally support cronjob and robots.txt file setup.
+* when `SENSITIVE_INFO_MASK='y'` enabled (by default), output for sensitive info is masked i.e. CF ZoneID, DNS A/AAAA record real server IP address and actual domain name. This allows sharing the info publicly on forums etc for troubleshooting. Set `SENSITIVE_INFO_MASK='n'` will disable the unmasked real info.
 
 Example run with `DEBUG_MODE='y'` enabled for displaying and checking parsed JSON key/values and assigned variables.
 
