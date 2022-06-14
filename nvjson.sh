@@ -69,6 +69,7 @@ DEBUG_MODE='y'
 
 #############################################################################
 # Cloudflare settings
+CF_DNS_IPFOUR_ONLY='y'
 IS_PROXIED='y'
 CF_ENABLE_CACHE_RESERVE='n'
 CF_ENABLE_CRAWLER_HINTS='n'
@@ -93,7 +94,7 @@ fi
 backup_zone_bind() {
   domain="$1"
   token="$cloudflare_api_token"
-  curl -4sX GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/export" -H "Content-Type:application/json" -H "Authorization: Bearer $token" > "$BIND_ZONE_BACKUPDIR/cf-zone-bind-export-$domain-$DT.txt"
+  curl -4sX GET "${endpoint}zones/${cloudflare_zoneid}/dns_records/export" -H "Content-Type:application/json" -H "Authorization: Bearer $token" > "$BIND_ZONE_BACKUPDIR/cf-zone-bind-export-$domain-$DT.txt"
   echo
   echo "---------------------------------------------------------------------"
   echo "backed up Cloudflare Zone Bind File at:"
@@ -106,6 +107,8 @@ backup_zone_bind() {
 parse_file() {
   file="$1"
   file_parsed=$(egrep -v '^#|^\/\*|^\/' "$file" | jq -r '.data[]')
+  domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )')
+  domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"')
   domain=$(echo "$file_parsed" | jq -r '."domain"')
   domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
   domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
@@ -147,7 +150,7 @@ parse_file() {
   index=$(echo "$file_parsed" | jq -r '."index"')
   robotsfile=$(echo "$file_parsed" | jq -r '."robotsfile"')
   cronjobfile=$(echo "$file_parsed" | jq -r '."cronjobfile"')
-  cfplan=$(curl -sX GET -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" "https://api.cloudflare.com/client/v4/zones/$cloudflare_zoneid" | jq -r '.result.plan.legacy_id')
+  cfplan=$(curl -sX GET -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" "${endpoint}zones/$cloudflare_zoneid" | jq -r '.result.plan.legacy_id')
   if [[ "$DEBUG_MODE" = [yY] ]]; then
     echo
     echo "---------------------------------------------------------------------"
@@ -237,57 +240,79 @@ create_vhost() {
     PROXY_OPT=false
   fi
   backup_zone_bind "$domain"
-  # create A record
-  if [[ "$DNS_CONTENT_A" && "$domain" ]]; then
-    RECORD_TYPE="A"
-    DNS_RECORD_NAME="$domain"
-    dns_mode=create
-    create_dns_a=$(curl -sX POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
-      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
-    check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
-    check_create_dns_a_errcode=$(echo "$create_dns_a" | jq -r '.errors[] | .code')
-    if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
-      dns_mode=update
-      # update not create DNS record
-      endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
-      dnsrecid=$(curl -sX GET "https://api.cloudflare.com/client/v4/${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
-      create_dns_a=$(curl -sX PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
-      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+  # cycle through $domain_array_list to create DNS A/AAAA records for
+  # primary domain and any parked domain names listed in vhost JSON config file
+  # under .domain-parkedX keys and .domain key
+  for dn in $domain_array_list; do
+    #############################################################################
+    # create A record
+    if [[ "$DNS_CONTENT_A" && "$dn" ]]; then
+      RECORD_TYPE="A"
+      DNS_RECORD_NAME="$dn"
+      dns_mode=create
+      create_dns_a=$(curl -sX POST "${endpoint}zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+        --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
       check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
+      check_create_dns_a_errcode=$(echo "$create_dns_a" | jq -r '.errors[] | .code')
+      if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
+        dns_mode=update
+        # update not create DNS record
+        endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
+        dnsrecid=$(curl -sX GET "${endpoint}${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
+        create_dns_a=$(curl -sX PATCH "${endpoint}zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+        --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_A $DNS_CONTENT_A --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_A\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+        check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
+      fi
+      if [[ "$check_create_dns_a" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+        echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+        echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+      elif [[ "$check_create_dns_a" = 'true' ]]; then
+        echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
+        echo "$create_dns_a" | jq -r
+      fi
     fi
-    if [[ "$check_create_dns_a" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
-      echo "error: $dns_mode DNS $RECORD_TYPE record failed"
-      echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
-    elif [[ "$check_create_dns_a" = 'true' ]]; then
-      echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
-      echo "$create_dns_a" | jq -r
-    fi
-  fi
-  # create AAAA record
-  if {[ "$DNS_CONTENT_AAAA" && "$domain" ]}; then
-    RECORD_TYPE="AAAA"
-    DNS_RECORD_NAME="$domain"
-    create_dns_aaaa=$(curl -sX POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
-      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
-    check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
-    check_create_dns_aaaa_errcode=$(echo "$create_dns_aaaa" | jq -r '.errors[] | .code')
-    if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
-      dns_mode=update
-      # update not create DNS record
-      endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
-      dnsrecid=$(curl -sX GET "https://api.cloudflare.com/client/v4/${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
-      create_dns_aaaa=$(curl -sX PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
-      --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
-      check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
-    fi
-    if [[ "$check_create_dns_aaaa" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
-      echo "error: $dns_mode DNS $RECORD_TYPE record failed"
-      echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
-    elif [[ "$check_create_dns_aaaa" = 'true' ]]; then
-      echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
-      echo "$create_dns_aaaa" | jq -r
-    fi
-  fi
+    if [[ "$CF_DNS_IPFOUR_ONLY" != [yY] ]]; then
+      # create AAAA record
+      if [[ "$DNS_CONTENT_AAAA" && "$dn" ]]; then
+        RECORD_TYPE="AAAA"
+        DNS_RECORD_NAME="$dn"
+        create_dns_aaaa=$(curl -sX POST "${endpoint}zones/${cloudflare_zoneid}/dns_records" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+          --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+        check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
+        check_create_dns_aaaa_errcode=$(echo "$create_dns_aaaa" | jq -r '.errors[] | .code')
+        if [[ "$check_create_dns_a_errcode" = '81057' ]]; then
+          dns_mode=update
+          # update not create DNS record
+          endpoint_target="zones/${cloudflare_zoneid}/dns_records?type=${RECORD_TYPE}&name=${DNS_RECORD_NAME}&page=1&per_page=100&order=type&direction=desc&match=all"
+          dnsrecid=$(curl -sX GET "${endpoint}${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
+          create_dns_aaaa=$(curl -sX PATCH "${endpoint}zones/${cloudflare_zoneid}/dns_records/$dnsrecid" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" \
+          --data $(jq -c -n --arg RECORD_TYPE $RECORD_TYPE --arg DNS_RECORD_NAME $DNS_RECORD_NAME --arg DNS_CONTENT_AAAA $DNS_CONTENT_AAAA --arg PROXY_OPT $PROXY_OPT $(echo "{\"type\":\"$RECORD_TYPE\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$DNS_CONTENT_AAAA\",\"ttl\":120,\"proxied\":$PROXY_OPT}") ))
+          check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
+        fi
+        if [[ "$check_create_dns_aaaa" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+          echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+          echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+        elif [[ "$check_create_dns_aaaa" = 'true' ]]; then
+          echo "success: $dns_mode DNS $RECORD_TYPE record succeeded"
+          echo "$create_dns_aaaa" | jq -r
+        fi
+      fi
+    elif [[ "$CF_DNS_IPFOUR_ONLY" = [yY] ]]; then
+      RECORD_TYPE="AAAA"
+      DNS_RECORD_NAME="$dn"
+      # if IPv4 only DNS is set, check and remove any AAAA entries 
+      # check if existing AAAA record exists
+      endpoint_target="zones/${cloudflare_zoneid}/dns_records?name=${dn}&type=${RECORD_TYPE}&page=1&per_page=100&direction=desc&match=all"
+      dnsrecid=$(curl -sX GET "${endpoint}${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r '.result[] | .id')
+      if [ "$dnsrecid" ]; then
+        echo "detected $RECORD_TYPE record for $dn"
+        echo "removing $RECORD_TYPE record for $dn"
+        endpoint_target="zones/${cloudflare_zoneid}/dns_records/$dnsrecid"
+        curl -sX DELETE "${endpoint}${endpoint_target}" -H "Content-Type:application/json" -H "Authorization: Bearer $cloudflare_api_token" | jq -r
+      fi
+    fi # CF_DNS_IPFOUR_ONLY
+    #############################################################################
+  done # domain_array_list loop
   echo
   echo "---------------------------------------------------------------------"
   echo "Adjust Cloudflare Settings For: $domain"
@@ -298,7 +323,7 @@ create_vhost() {
     echo "Set CF SSL Mode To Full SSL"
     echo "-------------------------------------------------"
     # options are off, flexible, full, strict
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"full"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -315,14 +340,14 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ssl" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Set CF Always Use HTTPS Off"
     echo "-------------------------------------------------"
     # options are off, on
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/always_use_https" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"off"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -339,14 +364,14 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/always_use_https" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/always_use_https" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Set CF Automatic HTTPS Rewrites Off"
     echo "-------------------------------------------------"
     # options are off, on
-  set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/ automatic_https_rewrites" \
+  set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ automatic_https_rewrites" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"off"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -363,13 +388,13 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Enable CF Tiered Caching"
     echo "-------------------------------------------------"
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/argo/tiered_caching" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"on"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -386,13 +411,13 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/argo/tiered_caching" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/argo/tiered_caching" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Set CF Browser Cache TTL = Respect Origin Headers"
     echo "-------------------------------------------------"
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":0}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -409,13 +434,13 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Set CF Minimum TLSv1.2 Version"
     echo "-------------------------------------------------"
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/min_tls_version" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"1.2"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -432,13 +457,13 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/min_tls_version" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/min_tls_version" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     echo "-------------------------------------------------"
     echo "Disable Email Obfuscation (Page Speed Optimization)"
     echo "-------------------------------------------------"
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/email_obfuscation" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"off"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -455,14 +480,14 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/email_obfuscation" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/email_obfuscation" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
     if [[ "$CF_ENABLE_CRAWLER_HINTS" = [yY] ]]; then
       echo "-------------------------------------------------"
       echo "Enable CF Crawler Hints"
       echo "-------------------------------------------------"
-      set=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+      set=$(curl -s -X POST "${endpoint}zones/${cloudflare_zoneid}/flags/products/cache/changes" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
               --data '{"feature":"crawlhints_enabled","value":true}' )
       check_cmd=$(echo "$set" | jq -r '.success')
@@ -479,7 +504,7 @@ create_vhost() {
         echo "$set" | jq -r
         echo
         echo "check setting"
-        curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/flags/products/cache/changes" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
       fi
     fi
@@ -487,7 +512,7 @@ create_vhost() {
       echo "-------------------------------------------------"
       echo "Enable CF Cache Reserve"
       echo "-------------------------------------------------"
-      set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
+      set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/cache/cache_reserve" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"on"}' )
       check_cmd=$(echo "$set" | jq -r '.success')
@@ -503,14 +528,14 @@ create_vhost() {
         echo
         echo "$set" | jq -r
         echo
-        curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/cache/cache_reserve" \
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/cache/cache_reserve" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
       fi
     fi
     echo "-------------------------------------------------"
     echo "Enable HTTP Prioritization"
     echo "-------------------------------------------------"
-    set=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/h2_prioritization" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"on"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -527,7 +552,7 @@ create_vhost() {
       echo "$set" | jq -r
       echo
       echo "check setting"
-      curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${cloudflare_zoneid}/settings/h2_prioritization" \
+      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/h2_prioritization" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
     fi
   else
