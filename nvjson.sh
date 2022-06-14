@@ -91,6 +91,10 @@ fi
 if [ -f "$WORKDIR/nvjson.ini" ]; then
   source "$WORKDIR/nvjson.ini"
 fi
+# utilise /etc/centminmod/acmetool-config.ini for convenience
+if [ ! -f /etc/centminmod/acmetool-config.ini ]; then
+  touch /etc/centminmod/acmetool-config.ini
+fi
 
 backup_zone_bind() {
   domain="$1"
@@ -255,15 +259,87 @@ create_vhost() {
   echo "Setup Cloudflare DNS API Token For: $domain_name_label (CF $cfplan plan)"
   echo "---------------------------------------------------------------------"
   echo
-  if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
-    echo "CF_DNSAPI_GLOBAL='y'"
-    echo "CF_Token=\"cloudflare_api_token\""
-    echo "CF_Account_ID=\"cloudflare_accountid\""
-  else
-    echo "CF_DNSAPI_GLOBAL='y'"
-    echo "CF_Token=\"$cloudflare_api_token\""
-    echo "CF_Account_ID=\"$cloudflare_accountid\""
+  # if /etc/centminmod/acmetool-config.ini doesn't exist, then rely on
+  # /etc/centminmod/custom_config.inc
+  if [ ! -f /etc/centminmod/acmetool-config.ini ]; then
+    if [ -f /etc/centminmod/custom_config.inc ]; then
+      # check if CF DNS API for acmetool.sh/acme.sh exists already
+      get_cf_dnsapi_global=$(grep '^CF_DNSAPI_GLOBAL' /etc/centminmod/custom_config.inc)
+      get_cf_token=$(grep '^CF_Token' /etc/centminmod/custom_config.inc)
+      get_cf_account_id=$(grep '^CF_Account_ID' /etc/centminmod/custom_config.inc)
+    elif [ ! -f /etc/centminmod/custom_config.inc ]; then
+      touch /etc/centminmod/custom_config.inc
+      echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/custom_config.inc
+      echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/custom_config.inc
+      echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/custom_config.inc
+    fi
+    # determine if we should remove entries after nvjson.sh run
+    if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && "$get_cf_account_id" ]]; then
+      # CF DNS API for acmetool.sh/acme.sh exists already
+      # setup overriding config at /etc/centminmod/acmetool-config.ini
+      touch /etc/centminmod/acmetool-config.ini
+      # then replace them with ones set in user vhost-config.json file temporarily
+      # sed -i '/^CF_DNSAPI_GLOBAL/d' /etc/centminmod/custom_config.inc
+      # sed -i '/^CF_Token/d' /etc/centminmod/custom_config.inc
+      # sed -i '/^CF_Account_ID/d' /etc/centminmod/custom_config.inc
+      echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/acmetool-config.ini
+    fi
+  elif [ -f /etc/centminmod/acmetool-config.ini ]; then
+    # /etc/centminmod/acmetool-config.ini exists and takes priority over
+    # /etc/centminmod/custom_config.inc
+    # check if CF DNS API for acmetool.sh/acme.sh exists already
+    get_cf_dnsapi_global=$(grep '^CF_DNSAPI_GLOBAL' /etc/centminmod/acmetool-config.ini)
+    get_cf_token=$(grep '^CF_Token' /etc/centminmod/acmetool-config.ini)
+    get_cf_account_id=$(grep '^CF_Account_ID' /etc/centminmod/acmetool-config.ini)
+    if [[ -z "$get_cf_dnsapi_global" && -z "$get_cf_token" && -z "$get_cf_account_id" ]]; then
+      echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/acmetool-config.ini
+      if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+        echo "configured /etc/centminmod/acmetool-config.ini"
+        cat /etc/centminmod/acmetool-config.ini | sed -e "s|$cloudflare_api_token|CF_API_TOKEN|" -e "s|$cloudflare_accountid|CF_Account_ID|"
+      else
+        echo "configured /etc/centminmod/acmetool-config.ini"
+        cat /etc/centminmod/acmetool-config.ini
+      fi
+    fi
+    # determine if we should remove entries after nvjson.sh run
+    if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && "$get_cf_account_id" ]]; then
+      # CF DNS API for acmetool.sh/acme.sh exists already
+      # want to backup existing credentials /etc/centminmod/cf-dns-api-nvjson.ini
+      if [ ! -f /etc/centminmod/cf-dns-api-nvjson.ini ]; then
+        touch /etc/centminmod/cf-dns-api-nvjson.ini
+        echo "$get_cf_dnsapi_global" >> /etc/centminmod/cf-dns-api-nvjson.ini
+        echo "$get_cf_token" >> /etc/centminmod/cf-dns-api-nvjson.ini
+        echo "$get_cf_account_id" >> /etc/centminmod/cf-dns-api-nvjson.ini
+      fi
+      # then replace them with ones set in user vhost-config.json file temporarily
+      sed -i '/^CF_DNSAPI_GLOBAL/d' /etc/centminmod/acmetool-config.ini
+      sed -i '/^CF_Token/d' /etc/centminmod/acmetool-config.ini
+      sed -i '/^CF_Account_ID/d' /etc/centminmod/acmetool-config.ini
+      echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/acmetool-config.ini
+      echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/acmetool-config.ini
+      if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+        echo "configured /etc/centminmod/acmetool-config.ini"
+        cat /etc/centminmod/acmetool-config.ini | sed -e "s|$cloudflare_api_token|CF_API_TOKEN|" -e "s|$cloudflare_accountid|CF_Account_ID|"
+      else
+        echo "configured /etc/centminmod/acmetool-config.ini"
+        cat /etc/centminmod/acmetool-config.ini
+      fi
+    fi
   fi
+  # if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+  #   echo "CF_DNSAPI_GLOBAL='y'"
+  #   echo "CF_Token=\"cloudflare_api_token\""
+  #   echo "CF_Account_ID=\"cloudflare_accountid\""
+  # else
+  #   echo "CF_DNSAPI_GLOBAL='y'"
+  #   echo "CF_Token=\"$cloudflare_api_token\""
+  #   echo "CF_Account_ID=\"$cloudflare_accountid\""
+  # fi
   echo
   echo
   echo "---------------------------------------------------------------------"
@@ -366,7 +442,7 @@ create_vhost() {
   echo "---------------------------------------------------------------------"
   echo
   if [[ "$cloudflare_zoneid" && "$cloudflare_api_token" ]]; then
-    if [[ "$https" = 'yes' ]]; then
+    if [[ "$https" = 'yes' || "$https" = [yY] ]]; then
       echo "-------------------------------------------------"
       echo "Set CF SSL Mode To Full SSL"
       echo "-------------------------------------------------"
@@ -665,14 +741,50 @@ create_vhost() {
     else
       ftp_pass_label=$ftp_pass
     fi
+    if [[ "$https" = 'yes' || "$https" = [yY] ]] && [[ "$origin_sslcert" = 'letsencrypt' || "$origin_sslcert" = 'zerossl' || "$origin_sslcert" = 'google' ]]; then
+      # browser trusted SSL certs from letsencrypt, zerossl, google CA
+      ngx_ssl_ca=lelived
+    elif [[ "$https" = 'yes' || "$https" = [yY] ]]; then
+      # self-signed SSL certificate
+      ngx_ssl_ca=y
+    fi
     echo "creating vhost $domain_name_label..."
     echo
-    if [[ "$https" = 'yes' ]]; then
-      echo "/usr/bin/nv -d $domain_name_label -s lelived -u $ftp_pass_label"
-      # /usr/bin/nv -d $domain -s lelived -u $ftp_pass
+    if [[ "$https" = 'yes' || "$https" = [yY] ]]; then
+      echo "/usr/bin/nv -d $domain_name_label -s $ngx_ssl_ca -u $ftp_pass_label"
+      # /usr/bin/nv -d $domain -s $ngx_ssl_ca -u $ftp_pass
     else
       echo "/usr/bin/nv -d $domain_name_label -s n -u $ftp_pass_label"
       # /usr/bin/nv -d $domain -s n -u $ftp_pass
+    fi
+    # enable cloudflare.conf include file
+    if [[ "$cloudflare" = 'yes' || "$cloudflare" = [yY] ]] && [[ -f "/usr/local/nginx/conf/conf.d/$domain.conf" ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo
+        echo "enable cloudflare.conf include file in /usr/local/nginx/conf/conf.d/$domain_name_label.conf"
+        sed -i 's|#include \/usr\/local\/nginx\/conf\/cloudflare.conf|include \/usr\/local\/nginx\/conf\/cloudflare.conf|' "/usr/local/nginx/conf/conf.d/$domain.conf"
+      else
+        sed -i 's|#include \/usr\/local\/nginx\/conf\/cloudflare.conf|include \/usr\/local\/nginx\/conf\/cloudflare.conf|' "/usr/local/nginx/conf/conf.d/$domain.conf"
+      fi
+    fi
+    if [[ "$cloudflare" = 'yes' || "$cloudflare" = [yY] ]] && [[ -f "/usr/local/nginx/conf/conf.d/$domain.ssl.conf" ]]; then
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo
+        echo "enable cloudflare.conf include file in /usr/local/nginx/conf/conf.d/$domain_name_label.ssl.conf"
+        sed -i 's|#include \/usr\/local\/nginx\/conf\/cloudflare.conf|include \/usr\/local\/nginx\/conf\/cloudflare.conf|' "/usr/local/nginx/conf/conf.d/$domain.ssl.conf"
+      else
+        sed -i 's|#include \/usr\/local\/nginx\/conf\/cloudflare.conf|include \/usr\/local\/nginx\/conf\/cloudflare.conf|' "/usr/local/nginx/conf/conf.d/$domain.ssl.conf"
+      fi
+    fi
+    ngxreload >/dev/null 2>&1
+    #
+    if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && "$get_cf_account_id" && -f /etc/centminmod/acmetool-config.ini && -f /etc/centminmod/cf-dns-api-nvjson.ini ]]; then
+      # remove CF DNS API acmetool.sh credentials after run
+      sed -i '/^CF_DNSAPI_GLOBAL/d' /etc/centminmod/acmetool-config.ini
+      sed -i '/^CF_Token/d' /etc/centminmod/acmetool-config.ini
+      sed -i '/^CF_Account_ID/d' /etc/centminmod/acmetool-config.ini
+      # restore previous detected credentials
+      cat /etc/centminmod/cf-dns-api-nvjson.ini >> /etc/centminmod/acmetool-config.ini
     fi
   fi
   echo
