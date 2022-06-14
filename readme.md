@@ -1,5 +1,9 @@
 A work in progress experimental method for creating new Centmin Mod Nginx vhost sites with Cloudflare API Token for quicker setup of Centmin Mod Nginx vhost sites behind Cloudflare CDN Proxy. Not fully working yet, so do not use for production live sites.
 
+# Cloudflare API Token
+
+For Cloudflare settings and DNS configuration, you'll need to use Cloudflare API. Cloudflare API, requires you to create your Cloudflare Token API with permissions for edit access to `Zone.Zone`, `Zone.DNS`, `Zone.Zone Settings` and `Zone.Cache Settings` across all Zones at https://dash.cloudflare.com/profile/api-tokens and to grab your Cloudflare Account ID from any of your Cloudflare domain's main dashboard's right side column listing.
+
 # nvjson.sh
 
 The `nvjson.sh` tool takes input from a `vhost-config.json` JSON formatted config file that users can create for their relevant Centmin Mod Nginx vhost + Cloudflare settings. 
@@ -518,7 +522,40 @@ creating vhost domain.com...
 Create MySSQL Databases For: domain.com
 ---------------------------------------------------------------------
 
+Debug mode check:
+dbname=db1
+dbuser=dbuser1
+dbpass=dbpass1
+
 /usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db1 dbuser1 dbpass1
+
+Debug mode check:
+dbname=db2
+dbuser=dbuser2
+dbpass=dbpass2
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db2 dbuser2 dbpass2
+
+Debug mode check:
+dbname=db3
+dbuser=dbuser3
+dbpass=dbpass3
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db3 dbuser3 dbpass3
+
+Debug mode check:
+dbname=db4
+dbuser=dbuser4
+dbpass=dbpass4
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db4 dbuser4 dbpass4
+
+Debug mode check:
+dbname=db5
+dbuser=dbuser5
+dbpass=dbpass5
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db5 dbuser5 dbpass5
 
 ---------------------------------------------------------------------
 Setup Robots.txt File For: domain.com
@@ -538,8 +575,6 @@ crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-140
 ```
 
 # JSON Format Vhost Config File
-
-Cloudflare API Tokens, requires you to create your Cloudflare Token API with permissions for edit access to `Zone.Zone`, `Zone.DNS`, `Zone.Zone Settings` and `Zone.Cache Settings` across all Zones at https://dash.cloudflare.com/profile/api-tokens and to grab your Cloudflare Account ID from any of your Cloudflare domain's main dashboard's right side column listing.
 
 The `vhost-config.json` JSON formatted config.
 

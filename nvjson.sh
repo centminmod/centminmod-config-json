@@ -109,6 +109,9 @@ parse_file() {
   file_parsed=$(egrep -v '^#|^\/\*|^\/' "$file" | jq -r '.data[]')
   domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )')
   domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"')
+  database_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("mysqldb|mysqluser|mysqlpass")) then ( {key: ."key", value: ."value" } ) else empty end )')
+  database_array_list=$(echo "$database_array_json" | jq -r 'to_entries[] | ."value"')
+  database_array_user_pairs=$(echo "$database_array_list" | xargs -n3)
   domain=$(echo "$file_parsed" | jq -r '."domain"')
   domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
   domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
@@ -339,9 +342,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/ssl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Set CF Always Use HTTPS Off"
@@ -363,15 +368,17 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/always_use_https" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/always_use_https" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Set CF Automatic HTTPS Rewrites Off"
     echo "-------------------------------------------------"
     # options are off, on
-  set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ automatic_https_rewrites" \
+    set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/ automatic_https_rewrites" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
             --data '{"value":"off"}' )
     check_cmd=$(echo "$set" | jq -r '.success')
@@ -387,9 +394,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/automatic_https_rewrites" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Enable CF Tiered Caching"
@@ -410,9 +419,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/argo/tiered_caching" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/argo/tiered_caching" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Set CF Browser Cache TTL = Respect Origin Headers"
@@ -433,9 +444,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/browser_cache_ttl" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Set CF Minimum TLSv1.2 Version"
@@ -456,9 +469,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/min_tls_version" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/min_tls_version" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     echo "-------------------------------------------------"
     echo "Disable Email Obfuscation (Page Speed Optimization)"
@@ -479,9 +494,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/email_obfuscation" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/email_obfuscation" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
     if [[ "$CF_ENABLE_CRAWLER_HINTS" = [yY] ]]; then
       echo "-------------------------------------------------"
@@ -503,9 +520,11 @@ create_vhost() {
         echo
         echo "$set" | jq -r
         echo
-        echo "check setting"
-        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/flags/products/cache/changes" \
+        if [[ "$DEBUG_MODE" = [yY] ]]; then
+          echo "check setting"
+          curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/flags/products/cache/changes" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+        fi
       fi
     fi
     if [[ "$CF_ENABLE_CACHE_RESERVE" = [yY] ]]; then
@@ -551,9 +570,11 @@ create_vhost() {
       echo
       echo "$set" | jq -r
       echo
-      echo "check setting"
-      curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/h2_prioritization" \
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "check setting"
+        curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/h2_prioritization" \
             -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+      fi
     fi
   else
     echo
@@ -576,9 +597,22 @@ create_vhost() {
   echo "---------------------------------------------------------------------"
   echo
   if [ -f /usr/local/src/centminmod/addons/mysqladmin_shell.sh ]; then
-    if [[ "$mysqldb1" && "$mysqluser1" && "$mysqlpass1" ]]; then
-      echo "/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $mysqldb1 $mysqluser1 $mysqlpass1"
-    fi
+    echo "$database_array_user_pairs" | while read d u p; do
+      dbname=$d
+      dbuser=$u
+      dbpass=$p
+      if [[ "$DEBUG_MODE" = [yY] ]]; then
+        echo "Debug mode check:"
+        echo "dbname=$dbname"
+        echo "dbuser=$dbuser"
+        echo "dbpass=$dbpass"
+        echo
+      fi
+      if [[ "$dbname" && "$dbuser" && "$dbpass" ]]; then
+        echo "/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $dbname $dbuser $dbpass"
+        echo
+      fi
+    done
   fi
   echo
   echo "---------------------------------------------------------------------"
