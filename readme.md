@@ -508,6 +508,60 @@ cat "/path/to/cronjobfile.txt" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-b
 crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-160622-102858.txt"
 ```
 
+From above example run output, you can see the Centmin Mod Nginx vhost is created using `addons/acmetool.sh` Letsencrypt SSL wrapper script for underlying [acme.sh](https://acme.sh) client and supports passing the additional SAN domain names and Nginx parked domain names for SSL certificate issuance and Nginx vhost creation.
+
+```
+---------------------------------------------------------------------
+Nginx Vhost Creation For: domain.com with server_names:
+domain.com,sub1.domain.com,sub2.domain.com,sub3.domain.com
+---------------------------------------------------------------------
+
+/usr/local/src/centminmod/addons/acmetool.sh issue domain.com,sub1.domain.com,sub2.domain.com,sub3.domain.com lived
+```
+
+Also each listed database name, database user/pass entries in vhost JSON config file is also processed using `addons/mysqladmin_shell.sh` tool.
+
+```
+---------------------------------------------------------------------
+Create MySSQL Databases For: domain.com
+---------------------------------------------------------------------
+
+Debug mode check:
+dbname=db1
+dbuser=dbuser1
+dbpass=dbpass1
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db1 dbuser1 dbpass1
+
+Debug mode check:
+dbname=db2
+dbuser=dbuser2
+dbpass=dbpass2
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db2 dbuser2 dbpass2
+
+Debug mode check:
+dbname=db3
+dbuser=dbuser3
+dbpass=dbpass3
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db3 dbuser3 dbpass3
+
+Debug mode check:
+dbname=db4
+dbuser=dbuser4
+dbpass=dbpass4
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db4 dbuser4 dbpass4
+
+Debug mode check:
+dbname=db5
+dbuser=dbuser5
+dbpass=dbpass5
+
+/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db5 dbuser5 dbpass5
+```
+
 # JSON Format Vhost Config File
 
 The `vhost-config.json` JSON formatted config.
