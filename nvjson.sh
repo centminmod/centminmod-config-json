@@ -63,7 +63,7 @@
 #   "cronjobfile": "/path/to/cronjobfile.txt"
 # }
 #############################################################################
-VER='0.1'
+VER='0.2'
 DT=$(date +"%d%m%y-%H%M%S")
 DEBUG_MODE='y'
 SENSITIVE_INFO_MASK='n'
@@ -112,11 +112,16 @@ backup_zone_bind() {
 parse_file() {
   file="$1"
   file_parsed=$(egrep -v '^#|^\/\*|^\/' "$file" | jq -r '.data[]')
+  # parse domains to process
   domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )')
   domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"')
+  domain_array_comma_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"' | xargs | sed -e 's| |,|g')
+  check_domain_is_array=$(echo "$domain_array_comma_list"| awk '/\,/'; domain_is_array_check=$?)
+  # parse databases to process
   database_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("mysqldb|mysqluser|mysqlpass")) then ( {key: ."key", value: ."value" } ) else empty end )')
   database_array_list=$(echo "$database_array_json" | jq -r 'to_entries[] | ."value"')
   database_array_user_pairs=$(echo "$database_array_list" | xargs -n3)
+
   domain=$(echo "$file_parsed" | jq -r '."domain"')
   domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
   domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
@@ -786,9 +791,26 @@ create_vhost() {
   fi # cloudflare=yes
   # only run Nginx vhost creation if the domain doesn't already exist
   if [[ ! -d "/home/nginx/domains/${domain}" ]]; then
+    if [[ "$domain_is_array_check"  -eq '0' ]]; then
+      if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+        domain_name_label_nginx=$(echo "${domain_array_comma_list}" | sed -e "s|$domain|domain.com|g")
+        domain_name_nginx=${domain_array_comma_list}
+      else
+        domain_name_label_nginx=${domain_array_comma_list}
+        domain_name_nginx=${domain_array_comma_list}
+      fi
+    else
+      domain_name_label_nginx=${domain_name_label}
+      domain_name_nginx=${domain}
+    fi
     echo
     echo "---------------------------------------------------------------------"
-    echo "Nginx Vhost Creation For: ${domain_name_label}"
+    if [[ "$domain_is_array_check"  -eq '0' ]]; then
+      echo "Nginx Vhost Creation For: ${domain} with server_names:"
+      echo "${domain_name_label_nginx}"
+    else
+      echo "Nginx Vhost Creation For: ${domain_name_label_nginx}"
+    fi
     echo "---------------------------------------------------------------------"
     echo
     if [ -f /usr/bin/nv ]; then
@@ -800,19 +822,21 @@ create_vhost() {
       fi
       if [[ "$https" = 'yes' || "$https" = [yY] ]] && [[ "$origin_sslcert" = 'letsencrypt' || "$origin_sslcert" = 'zerossl' || "$origin_sslcert" = 'google' ]]; then
         # browser trusted SSL certs from letsencrypt, zerossl, google CA
-        ngx_ssl_ca=lelived
+        ngx_ssl_ca=lived
       elif [[ "$https" = 'yes' || "$https" = [yY] ]]; then
         # self-signed SSL certificate
         ngx_ssl_ca=y
       fi
-      echo "creating vhost ${domain_name_label}..."
-      echo
+      # echo "creating vhost ${domain_name_label_nginx}"
+      # echo
       if [[ "$https" = 'yes' || "$https" = [yY] ]]; then
-        echo "/usr/bin/nv -d ${domain_name_label} -s $ngx_ssl_ca -u $ftp_pass_label"
-        # /usr/bin/nv -d $domain -s $ngx_ssl_ca -u $ftp_pass
+        # echo "/usr/bin/nv -d ${domain_name_label_nginx} -s $ngx_ssl_ca -u $ftp_pass_label"
+        # /usr/bin/nv -d $domain_name_nginx -s $ngx_ssl_ca -u $ftp_pass
+        echo "/usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_label_nginx lived"
+        # /usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_nginx lived
       else
-        echo "/usr/bin/nv -d ${domain_name_label} -s n -u $ftp_pass_label"
-        # /usr/bin/nv -d $domain -s n -u $ftp_pass
+        echo "/usr/bin/nv -d ${domain_name_label_nginx} -s n -u $ftp_pass_label"
+        # /usr/bin/nv -d $domain_name_nginx -s n -u $ftp_pass
       fi
       # enable cloudflare.conf include file
       if [[ "$cloudflare" = 'yes' || "$cloudflare" = [yY] ]] && [[ -f "/usr/local/nginx/conf/conf.d/$domain.conf" ]]; then

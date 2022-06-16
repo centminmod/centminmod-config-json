@@ -38,8 +38,8 @@ parsed vhost config file output
   "https": "yes",
   "origin-sslcert": "letsencrypt",
   "cloudflare": "yes",
-  "cloudflare-accountid": "CF_ACCOUNTID",
-  "cloudflare-zoneid": "CF_ZONEID",
+  "cloudflare-accountid": "CF_ACCOUNT_ID",
+  "cloudflare-zoneid": "CF_ZONE_ID",
   "cloudflare-api-token": "CF_API_TOKEN",
   "cloudflare-min-tls": "1.2",
   "cloudflare-tiered-cache": "yes",
@@ -73,22 +73,25 @@ Variable checks:
 cfplan=free
 domain=domain.com
 domain_www=www.domain.com
-domain_preferred=domain.com-preferred
-domain_parked1=domain.com-parked1
-domain_parked2=domain.com-parked2
-domain_parked3=domain.com-parked3
+domain_preferred=www.domain.com
+domain_parked1=sub1.domain.com
+domain_parked2=sub2.domain.com
+domain_parked3=sub3.domain.com
+domain_parked4=null
+domain_parked5=null
+domain_parked6=null
 email=email@domain
 https=yes
-origin_sslcert=-sslcert
+origin_sslcert=sslcert
 cloudflare=yes
-cloudflare_accountid=yes-accountid
-cloudflare_zoneid=yes-zoneid
-cloudflare_api_token=yes-api-token
-cloudflare_min_tls=yes-min-tls
-cloudflare_tiered_cache=yes-tiered-cache
-cloudflare_cache_reserve=yes-cache-reserve
-cloudflare_crawler_hints=yes-crawler-hints
-cloudflare_respect_origin_headers=yes-respect-origin-headers
+cloudflare_accountid=yes
+cloudflare_zoneid=yes
+cloudflare_api_token=yes
+cloudflare_min_tls=yes
+cloudflare_tiered_cache=yes
+cloudflare_cache_reserve=yes
+cloudflare_crawler_hints=yes
+cloudflare_respect_origin_headers=yes
 type=site
 mysqldb1=db1
 mysqluser1=dbuser1
@@ -138,9 +141,10 @@ curl -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
 Setup Cloudflare DNS API Token For: domain.com (CF free plan)
 ---------------------------------------------------------------------
 
+configured /etc/centminmod/acmetool-config.ini
 CF_DNSAPI_GLOBAL='y'
 CF_Token="CF_API_TOKEN"
-CF_Account_ID="CF_ACCOUNTID"
+CF_Account_ID="CF_ACCOUNT_ID"
 
 
 ---------------------------------------------------------------------
@@ -150,14 +154,14 @@ Setup Cloudflare DNS A For: domain.com (CF free plan)
 ---------------------------------------------------------------------
 backed up Cloudflare Zone Bind File at:
 ---------------------------------------------------------------------
-/etc/cfapi/backup-zone-bind/cf-zone-bind-export-domain.com-140622-052930.txt
+/etc/cfapi/backup-zone-bind/cf-zone-bind-export-domain.com-160622-102858.txt
 ---------------------------------------------------------------------
 
-success: create DNS A record succeeded
+success: update DNS A record succeeded
 {
   "result": {
     "id": "90adb5d5122aea41c8a0d345f916520c",
-    "zone_id": "CF_ZONEID",
+    "zone_id": "CF_ZONE_ID",
     "zone_name": "domain.com",
     "name": "domain.com",
     "type": "A",
@@ -169,8 +173,7 @@ success: create DNS A record succeeded
     "meta": {
       "auto_added": false,
       "managed_by_apps": false,
-      "managed_by_argo_tunnel": false,
-      "source": "primary"
+      "managed_by_argo_tunnel": false
     },
     "created_on": "2022-06-14T05:29:32.808626Z",
     "modified_on": "2022-06-14T05:29:32.808626Z"
@@ -179,21 +182,11 @@ success: create DNS A record succeeded
   "errors": [],
   "messages": []
 }
-detected AAAA record for domain.com
-removing AAAA record for domain.com
-{
-  "result": {
-    "id": "55cffee0e70285c4f684c80210af8ee4"
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
-success: create DNS A record succeeded
+success: update DNS A record succeeded
 {
   "result": {
     "id": "ad2abc16f23c561c5e2a37983b91d4f4",
-    "zone_id": "CF_ZONEID",
+    "zone_id": "CF_ZONE_ID",
     "zone_name": "domain.com",
     "name": "sub1.domain.com",
     "type": "A",
@@ -205,8 +198,7 @@ success: create DNS A record succeeded
     "meta": {
       "auto_added": false,
       "managed_by_apps": false,
-      "managed_by_argo_tunnel": false,
-      "source": "primary"
+      "managed_by_argo_tunnel": false
     },
     "created_on": "2022-06-14T05:29:33.697751Z",
     "modified_on": "2022-06-14T05:29:33.697751Z"
@@ -215,21 +207,11 @@ success: create DNS A record succeeded
   "errors": [],
   "messages": []
 }
-detected AAAA record for sub1.domain.com
-removing AAAA record for sub1.domain.com
-{
-  "result": {
-    "id": "3a9e0211bfef8e65b6a9c4c18a2da9d5"
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
-success: create DNS A record succeeded
+success: update DNS A record succeeded
 {
   "result": {
     "id": "9d26b7ebe1d9a02f209733e43f598ed4",
-    "zone_id": "CF_ZONEID",
+    "zone_id": "CF_ZONE_ID",
     "zone_name": "domain.com",
     "name": "sub2.domain.com",
     "type": "A",
@@ -241,8 +223,7 @@ success: create DNS A record succeeded
     "meta": {
       "auto_added": false,
       "managed_by_apps": false,
-      "managed_by_argo_tunnel": false,
-      "source": "primary"
+      "managed_by_argo_tunnel": false
     },
     "created_on": "2022-06-14T05:29:34.887328Z",
     "modified_on": "2022-06-14T05:29:34.887328Z"
@@ -251,21 +232,11 @@ success: create DNS A record succeeded
   "errors": [],
   "messages": []
 }
-detected AAAA record for sub2.domain.com
-removing AAAA record for sub2.domain.com
-{
-  "result": {
-    "id": "f2080b74eaf73f71b9ab40add8f3cab6"
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
-success: create DNS A record succeeded
+success: update DNS A record succeeded
 {
   "result": {
     "id": "499b8b34aaf8c652f36cdfaa0c39267e",
-    "zone_id": "CF_ZONEID",
+    "zone_id": "CF_ZONE_ID",
     "zone_name": "domain.com",
     "name": "sub3.domain.com",
     "type": "A",
@@ -277,21 +248,10 @@ success: create DNS A record succeeded
     "meta": {
       "auto_added": false,
       "managed_by_apps": false,
-      "managed_by_argo_tunnel": false,
-      "source": "primary"
+      "managed_by_argo_tunnel": false
     },
     "created_on": "2022-06-14T05:29:35.788126Z",
     "modified_on": "2022-06-14T05:29:35.788126Z"
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
-detected AAAA record for sub3.domain.com
-removing AAAA record for sub3.domain.com
-{
-  "result": {
-    "id": "43072b25d9c40cf6c40369ee5f7d8582"
   },
   "success": true,
   "errors": [],
@@ -426,35 +386,6 @@ check setting
   "messages": []
 }
 -------------------------------------------------
-Set CF Minimum TLSv1.2 Version
--------------------------------------------------
-ok: CF API command succeeded.
-
-{
-  "result": {
-    "id": "min_tls_version",
-    "value": "1.2",
-    "modified_on": null,
-    "editable": true
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
-
-check setting
-{
-  "result": {
-    "id": "min_tls_version",
-    "value": "1.2",
-    "modified_on": null,
-    "editable": true
-  },
-  "success": true,
-  "errors": [],
-  "messages": []
-}
--------------------------------------------------
 Disable Email Obfuscation (Page Speed Optimization)
 -------------------------------------------------
 ok: CF API command succeeded.
@@ -514,12 +445,11 @@ check setting
 }
 
 ---------------------------------------------------------------------
-Nginx Vhost Creation For: domain.com
+Nginx Vhost Creation For: domain.com with server_names:
+domain.com,sub1.domain.com,sub2.domain.com,sub3.domain.com
 ---------------------------------------------------------------------
 
-creating vhost domain.com...
-
-/usr/bin/nv -d domain.com -s lelived -u }/f~1;"F_LLs]Z(Fzz(Bx7AU(bp"6
+/usr/local/src/centminmod/addons/acmetool.sh issue domain.com,sub1.domain.com,sub2.domain.com,sub3.domain.com lived
 
 ---------------------------------------------------------------------
 Create MySSQL Databases For: domain.com
@@ -560,6 +490,7 @@ dbpass=dbpass5
 
 /usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb db5 dbuser5 dbpass5
 
+
 ---------------------------------------------------------------------
 Setup Robots.txt File For: domain.com
 ---------------------------------------------------------------------
@@ -572,9 +503,9 @@ Setup Cronjobs For: domain.com
 
 setup /path/to/cronjobfile.txt
 mkdir -p /etc/centminmod/cronjobs/
-crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-140622-052930.txt"
-cat "/path/to/cronjobfile.txt" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-140622-052930.txt"
-crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-140622-052930.txt"
+crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-160622-102858.txt"
+cat "/path/to/cronjobfile.txt" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-160622-102858.txt"
+crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-domain.com-setup-160622-102858.txt"
 ```
 
 # JSON Format Vhost Config File
