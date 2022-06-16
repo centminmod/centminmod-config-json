@@ -96,6 +96,32 @@ if [ ! -f /etc/centminmod/acmetool-config.ini ]; then
   touch /etc/centminmod/acmetool-config.ini
 fi
 
+check_dns() {
+  vhostname_dns="$1"
+    # if CHECKIDN = 0 then internationalized domain name which not supported by letsencrypt
+    CHECKIDN=$(echo $vhostname_dns | idn | grep '^xn--' >/dev/null 2>&1; echo $?)
+    if [[ "$CHECKIDN" = '0' ]]; then
+      TOPLEVELCHECK=$(dig soa @8.8.8.8 $vhostname_dns | grep -v ^\; | grep SOA | awk '{print $1}' | sed 's/\.$//' | idn)
+    else
+      TOPLEVELCHECK=$(dig soa @8.8.8.8 $vhostname_dns | grep -v ^\; | grep SOA | awk '{print $1}' | sed 's/\.$//')
+    fi
+    if [[ "$TOPLEVELCHECK" = "$vhostname_dns" ]]; then
+      # top level domain
+      TOPLEVEL=y
+    elif [[ -z "$TOPLEVELCHECK" ]]; then
+      # vhost dns not setup
+      TOPLEVEL=z
+      if [[ "$(echo $vhostname_dns | grep -o "\." | wc -l)" -le '1' ]]; then
+        TOPLEVEL=y
+      else
+        TOPLEVEL=n
+      fi
+    else
+      # subdomain or non top level domain
+      TOPLEVEL=n
+    fi
+}
+
 backup_zone_bind() {
   domain="$1"
   token="$cloudflare_api_token"
@@ -111,26 +137,65 @@ backup_zone_bind() {
 
 parse_file() {
   file="$1"
+  input_domain="$2"
   file_parsed=$(egrep -v '^#|^\/\*|^\/' "$file" | jq -r '.data[]')
-  # parse domains to process
-  domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )')
-  domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"')
-  domain_array_comma_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"' | xargs | sed -e 's| |,|g')
-  check_domain_is_array=$(echo "$domain_array_comma_list"| awk '/\,/'; domain_is_array_check=$?)
+  if [ "$input_domain" ]; then
+    # parse domains to process
+    domain=$(echo "$file_parsed" | jq -r '."domain"')
+    domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )' | sed -e "s|$domain|$input_domain|g")
+    domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"' | sed -e "s|$domain|$input_domain|g")
+    domain_array_comma_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"' | xargs | sed -e 's| |,|g' | sed -e "s|$domain|$input_domain|g")
+    check_domain_is_array=$(echo "$domain_array_comma_list"| awk '/\,/'; domain_is_array_check=$?)
+    domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked1=$(echo "$file_parsed" | jq -r '."domain-parked1"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked2=$(echo "$file_parsed" | jq -r '."domain-parked2"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked3=$(echo "$file_parsed" | jq -r '."domain-parked3"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked4=$(echo "$file_parsed" | jq -r '."domain-parked4"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked5=$(echo "$file_parsed" | jq -r '."domain-parked5"' | sed -e "s|$domain|$input_domain|g")
+    domain_parked6=$(echo "$file_parsed" | jq -r '."domain-parked6"' | sed -e "s|$domain|$input_domain|g")
+    webroot=$(echo "$file_parsed" | jq -r '."webroot"' | sed -e "s|$domain|$input_domain|g")
+    index=$(echo "$file_parsed" | jq -r '."index"' | sed -e "s|$domain|$input_domain|g")
+    robotsfile=$(echo "$file_parsed" | jq -r '."robotsfile"' | sed -e "s|$domain|$input_domain|g")
+    domain=${input_domain}
+  else
+    domain=$(echo "$file_parsed" | jq -r '."domain"')
+    # parse domains to process
+    domain_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("domain-parked|domain$")) then ( {key: ."key", value: ."value" } ) else empty end )')
+    domain_array_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"')
+    domain_array_comma_list=$(echo "$domain_array_json" | jq -r 'to_entries[] | ."value"' | xargs | sed -e 's| |,|g')
+    check_domain_is_array=$(echo "$domain_array_comma_list"| awk '/\,/'; domain_is_array_check=$?)
+    domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
+    domain_parked1=$(echo "$file_parsed" | jq -r '."domain-parked1"')
+    domain_parked2=$(echo "$file_parsed" | jq -r '."domain-parked2"')
+    domain_parked3=$(echo "$file_parsed" | jq -r '."domain-parked3"')
+    domain_parked4=$(echo "$file_parsed" | jq -r '."domain-parked4"')
+    domain_parked5=$(echo "$file_parsed" | jq -r '."domain-parked5"')
+    domain_parked6=$(echo "$file_parsed" | jq -r '."domain-parked6"')
+    webroot=$(echo "$file_parsed" | jq -r '."webroot"')
+    index=$(echo "$file_parsed" | jq -r '."index"')
+    robotsfile=$(echo "$file_parsed" | jq -r '."robotsfile"')
+  fi
+  if [ "${domain}" ]; then
+    check_dns "${domain}"
+  fi
+  # check if domain is subdomain or not as subdomains
+  # do not have www hostname
+  if [[ "$TOPLEVEL" = [nN] ]]; then
+    domain_www=""
+  else
+    if [ "$input_domain" ]; then
+      domain=$(echo "$file_parsed" | jq -r '."domain"')
+      domain_www=$(echo "$file_parsed" | jq -r '."domain-www"' | sed -e "s|$domain|$input_domain|g")
+      domain=${input_domain}
+    else
+      domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
+    fi
+  fi
   # parse databases to process
   database_array_json=$(echo "$file_parsed" | jq 'with_entries(if (.key|test("mysqldb|mysqluser|mysqlpass")) then ( {key: ."key", value: ."value" } ) else empty end )')
   database_array_list=$(echo "$database_array_json" | jq -r 'to_entries[] | ."value"')
   database_array_user_pairs=$(echo "$database_array_list" | xargs -n3)
 
-  domain=$(echo "$file_parsed" | jq -r '."domain"')
-  domain_www=$(echo "$file_parsed" | jq -r '."domain-www"')
-  domain_preferred=$(echo "$file_parsed" | jq -r '."domain-preferred"')
-  domain_parked1=$(echo "$file_parsed" | jq -r '."domain-parked1"')
-  domain_parked2=$(echo "$file_parsed" | jq -r '."domain-parked2"')
-  domain_parked3=$(echo "$file_parsed" | jq -r '."domain-parked3"')
-  domain_parked4=$(echo "$file_parsed" | jq -r '."domain-parked4"')
-  domain_parked5=$(echo "$file_parsed" | jq -r '."domain-parked5"')
-  domain_parked6=$(echo "$file_parsed" | jq -r '."domain-parked6"')
   email=$(echo "$file_parsed" | jq -r '."email"')
   https=$(echo "$file_parsed" | jq -r '."https"')
   origin_sslcert=$(echo "$file_parsed" | jq -r '."origin-sslcert"')
@@ -162,9 +227,6 @@ parse_file() {
   mysqldb5=$(echo "$file_parsed" | jq -r '."mysqldb5"')
   mysqluser5=$(echo "$file_parsed" | jq -r '."mysqluser5"')
   mysqlpass5=$(echo "$file_parsed" | jq -r '."mysqlpass5"')
-  webroot=$(echo "$file_parsed" | jq -r '."webroot"')
-  index=$(echo "$file_parsed" | jq -r '."index"')
-  robotsfile=$(echo "$file_parsed" | jq -r '."robotsfile"')
   cronjobfile=$(echo "$file_parsed" | jq -r '."cronjobfile"')
   cfplan=$(curl -sX GET -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" "${endpoint}zones/$cloudflare_zoneid" | jq -r '.result.plan.legacy_id')
   if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
@@ -193,11 +255,13 @@ parse_file() {
     echo "---------------------------------------------------------------------"
     echo "Debug Mode Output:"
     echo "---------------------------------------------------------------------"
-    echo "parsed vhost config file output"
-    if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
-      echo "${file_parsed}" | sed -e "s|$domain|domain.com|g" -e "s|$cloudflare_api_token|CF_API_TOKEN|" -e "s|$cloudflare_accountid|CF_Account_ID|"
-    else
-      echo "${file_parsed}" 
+    if [ -z "$input_domain" ]; then
+      echo "parsed vhost config file output"
+      if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
+        echo "${file_parsed}" | sed -e "s|$domain|domain.com|g" -e "s|$cloudflare_api_token|CF_API_TOKEN|" -e "s|$cloudflare_accountid|CF_Account_ID|"
+      else
+        echo "${file_parsed}" 
+      fi
     fi
     echo "---------------------------------------------------------------------"
     echo "Variable checks:"
@@ -286,7 +350,12 @@ parse_file() {
 
 create_vhost() {
   file="$1"
-  parse_file "$file"
+  if [ "$2" ]; then
+    parse_file "$file" "$2"
+  else
+    parse_file "$file"
+  fi
+  
   if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
     domain_name_label=domain.com
   else
@@ -403,7 +472,7 @@ create_vhost() {
     else
       PROXY_OPT=false
     fi
-    backup_zone_bind "$domain"
+    backup_zone_bind "${domain}"
     # cycle through $domain_array_list to create DNS A/AAAA records for
     # primary domain and any parked domain names listed in vhost JSON config file
     # under .domain-parkedX keys and .domain key
@@ -428,6 +497,9 @@ create_vhost() {
           check_create_dns_a=$(echo "$create_dns_a" | jq -r '.success')
         fi
         if [[ "$check_create_dns_a" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+          echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+          echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+        elif [[ "$check_create_dns_a" = 'false' && "$check_create_dns_a_errcode" = '81057' ]]; then
           echo "error: $dns_mode DNS $RECORD_TYPE record failed"
           echo "$create_dns_a" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
         elif [[ "$check_create_dns_a" = 'true' ]]; then
@@ -458,6 +530,9 @@ create_vhost() {
             check_create_dns_aaaa=$(echo "$create_dns_aaaa" | jq -r '.success')
           fi
           if [[ "$check_create_dns_aaaa" = 'false' && "$check_create_dns_a_errcode" != '81057' ]]; then
+            echo "error: $dns_mode DNS $RECORD_TYPE record failed"
+            echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
+          elif [[ "$check_create_dns_aaaa" = 'false' && "$check_create_dns_a_errcode" = '81057' ]]; then
             echo "error: $dns_mode DNS $RECORD_TYPE record failed"
             echo "$create_dns_aaaa" | jq -r '.errors[] | "code: \(.code) message: \(.message)"'
           elif [[ "$check_create_dns_aaaa" = 'true' ]]; then
@@ -900,7 +975,7 @@ create_vhost() {
     echo
     # echo "copying $robotsfile to ${webroot}/robots.txt"
     if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
-      echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|$domain|domain.com|g"
+      echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|${domain}|domain.com|g"
     else
       echo "\cp -af $robotsfile ${webroot}/robots.txt"
     fi
@@ -940,11 +1015,12 @@ help() {
   echo "Usage:"
   echo
   echo "$0 create vhost-config.json"
+  echo "$0 create vhost-config.json domain.com"
 }
 
 case "$1" in
   create )
-    create_vhost "$2"
+    create_vhost "$2" "$3"
     ;;
   * )
     help
