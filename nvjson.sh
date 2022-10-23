@@ -74,6 +74,7 @@ CF_DNS_IPFOUR_ONLY='y'
 IS_PROXIED='y'
 CF_ENABLE_CACHE_RESERVE='n'
 CF_ENABLE_CRAWLER_HINTS='n'
+CF_ENABLE_EARLY_HINTS='y'
 
 # Cloudflare DNS API settings
 WORKDIR='/etc/cfapi'
@@ -210,6 +211,7 @@ parse_file() {
   cloudflare_tiered_cache=$(echo "$file_parsed" | jq -r '."cloudflare-tiered-cache"')
   cloudflare_cache_reserve=$(echo "$file_parsed" | jq -r '."cloudflare-cache-reserve"')
   cloudflare_crawler_hints=$(echo "$file_parsed" | jq -r '."cloudflare-crawler-hints"')
+  cloudflare_early_hints=$(echo "$file_parsed" | jq -r '."cloudflare-early-hints"')
   cloudflare_respect_origin_headers=$(echo "$file_parsed" | jq -r '."cloudflare-respect-origin-headers"')
   type=$(echo "$file_parsed" | jq -r '."type"')
   mysqldb1=$(echo "$file_parsed" | jq -r '."mysqldb1"')
@@ -305,6 +307,7 @@ parse_file() {
     echo "cloudflare_tiered_cache=${cloudflare-tiered-cache}"
     echo "cloudflare_cache_reserve=${cloudflare-cache-reserve}"
     echo "cloudflare_crawler_hints=${cloudflare-crawler-hints}"
+    echo "cloudflare_early_hints=${cloudflare-early-hints}"
     echo "cloudflare_respect_origin_headers=${cloudflare-respect-origin-headers}"
     echo "type=${type}"
     if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
@@ -777,6 +780,35 @@ create_vhost() {
           echo "check setting"
           curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/email_obfuscation" \
               -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+        fi
+      fi
+      if [[ "$CF_ENABLE_EARLY_HINTS" = [yY] ]]; then
+        if [[ "$cloudflare_early_hints" = 'yes' || "$cloudflare_early_hints" = [yY] ]]; then
+          echo "-------------------------------------------------"
+          echo "Enable CF Early Hints"
+          echo "-------------------------------------------------"
+          set=$(curl -s -X PATCH "${endpoint}zones/${cloudflare_zoneid}/settings/early_hints" \
+                  -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" \
+                  --data '{"value":"on"}' )
+          check_cmd=$(echo "$set" | jq -r '.success')
+          if [[ "$check_cmd" = 'false' ]]; then
+            if [[ "$DEBUG_MODE" = [yY] ]]; then
+              echo "error: CF API command failed."
+              echo "$set" | jq -r
+            else
+              echo "error: CF API command failed."
+            fi
+          elif [[ "$check_cmd" = 'true' ]]; then
+            echo "ok: CF API command succeeded."
+            echo
+            echo "$set" | jq -r
+            echo
+            if [[ "$DEBUG_MODE" = [yY] ]]; then
+              echo "check setting"
+              curl -s -X GET "${endpoint}zones/${cloudflare_zoneid}/settings/early_hints" \
+                  -H "Authorization: Bearer $cloudflare_api_token" -H "Content-Type: application/json" | jq
+            fi
+          fi
         fi
       fi
       if [[ "$CF_ENABLE_CRAWLER_HINTS" = [yY] ]]; then

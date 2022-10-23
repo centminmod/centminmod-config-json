@@ -18,6 +18,7 @@
             "cloudflare-tiered-cache": "yes",
             "cloudflare-cache-reserve": "yes",
             "cloudflare-crawler-hints": "yes",
+            "cloudflare-early-hints": "yes",
             "cloudflare-respect-origin-headers": "yes",
             "type": "site",
             "mysqldb1": "db1",
