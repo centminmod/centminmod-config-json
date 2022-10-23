@@ -466,8 +466,8 @@ create_vhost() {
     echo "---------------------------------------------------------------------"
     echo "Setup Cloudflare DNS A For: ${domain_name_label} (CF $cfplan plan)"
     echo "---------------------------------------------------------------------"
-    SERVERIP_A=$(curl -4s -A "$CURL_AGENT IPv4" https://geoip.centminmod.com/v3 | jq -r '.ip')
-    SERVERIP_AAAA=$(curl -6s -A "$CURL_AGENT IPv6" https://geoip.centminmod.com/v3 | jq -r '.ip')
+    SERVERIP_A=$(curl -4s -A "$CURL_AGENT nvjson IPv4" https://geoip.centminmod.com/v4 | jq -r '.ip')
+    SERVERIP_AAAA=$(curl -6s -A "$CURL_AGENT nvjson IPv6" https://geoip.centminmod.com/v4 | jq -r '.ip')
     DNS_CONTENT_A="$SERVERIP_A"
     DNS_CONTENT_AAAA="$SERVERIP_AAAA"
     if [[ "$IS_PROXIED" = [yY] ]]; then
