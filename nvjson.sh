@@ -353,12 +353,50 @@ parse_file() {
 
 create_vhost() {
   file="$1"
+  if [ ! -f "$file" ]; then
+    echo "Error: JSON file not found"
+    exit 1
+  fi
+
+  # check required JSON keys
+  required_keys=(
+  "domain"
+  "domain-www"
+  "domain-preferred"
+  "email"
+  "https"
+  "origin-sslcert"
+  "cloudflare"
+  "cloudflare-accountid"
+  "cloudflare-zoneid"
+  "cloudflare-api-token"
+  "cloudflare-min-tls"
+  "cloudflare-tiered-cache"
+  "cloudflare-cache-reserve"
+  "cloudflare-crawler-hints"
+  "cloudflare-early-hints"
+  "cloudflare-respect-origin-headers"
+  "type"
+  "mysqldb1"
+  "mysqluser1"
+  "mysqlpass1"
+  "webroot"
+  )
+  for key in "${required_keys[@]}"; do
+    if ! jq -e ".data[] | has(\"$key\")" "$1" > /dev/null; then
+      echo "Error: $file JSON file is missing the required key: $key"
+      echo
+      cat "$file"
+      exit 1
+    fi
+  done
+
   if [ "$2" ]; then
     parse_file "$file" "$2"
   else
     parse_file "$file"
   fi
-  
+
   if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
     domain_name_label=domain.com
   else
@@ -380,6 +418,14 @@ create_vhost() {
     echo "Setup Cloudflare DNS API Token For: ${domain_name_label} (CF $cfplan plan)"
     echo "---------------------------------------------------------------------"
     echo
+    # Check if extracted values match default placeholders
+    is_default_token() {
+      [ "$1" = "CF_API_TOKEN" ]
+    }
+    
+    is_default_account_id() {
+      [ "$1" = "CF_ACCOUNTID" ]
+    }
     # if /etc/centminmod/acmetool-config.ini doesn't exist, then rely on
     # /etc/centminmod/custom_config.inc
     if [ ! -f /etc/centminmod/acmetool-config.ini ]; then
@@ -395,7 +441,7 @@ create_vhost() {
         echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/custom_config.inc
       fi
       # determine if we should remove entries after nvjson.sh run
-      if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && "$get_cf_account_id" ]]; then
+      if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && ! $(is_default_token "$get_cf_token") && "$get_cf_account_id" && ! $(is_default_account_id "$get_cf_account_id") ]]; then
         # CF DNS API for acmetool.sh/acme.sh exists already
         # setup overriding config at /etc/centminmod/acmetool-config.ini
         touch /etc/centminmod/acmetool-config.ini
@@ -406,6 +452,13 @@ create_vhost() {
         echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/acmetool-config.ini
         echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/acmetool-config.ini
         echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/acmetool-config.ini
+      else
+        echo "----------------------------------------------------------------"
+        echo "Error: CF_Token and/or CF_Account_ID not properly configured"
+        echo "       check your vhost-config.json set values for:"
+        echo "       cloudflare-accountid"
+        echo "       cloudflare-api-token"
+        echo "----------------------------------------------------------------"
       fi
     elif [ -f /etc/centminmod/acmetool-config.ini ]; then
       # /etc/centminmod/acmetool-config.ini exists and takes priority over
@@ -414,7 +467,7 @@ create_vhost() {
       get_cf_dnsapi_global=$(grep '^CF_DNSAPI_GLOBAL' /etc/centminmod/acmetool-config.ini)
       get_cf_token=$(grep '^CF_Token' /etc/centminmod/acmetool-config.ini)
       get_cf_account_id=$(grep '^CF_Account_ID' /etc/centminmod/acmetool-config.ini)
-      if [[ -z "$get_cf_dnsapi_global" && -z "$get_cf_token" && -z "$get_cf_account_id" ]]; then
+      if [[ -z "$get_cf_dnsapi_global" && -z "$get_cf_token" && -z "$get_cf_account_id" && ! $(is_default_token "$get_cf_token") && "$get_cf_account_id" && ! $(is_default_account_id "$get_cf_account_id") ]]; then
         echo "CF_DNSAPI_GLOBAL='y'" >> /etc/centminmod/acmetool-config.ini
         echo "CF_Token=\"$cloudflare_api_token\"" >> /etc/centminmod/acmetool-config.ini
         echo "CF_Account_ID=\"$cloudflare_accountid\"" >> /etc/centminmod/acmetool-config.ini
@@ -427,7 +480,7 @@ create_vhost() {
         fi
       fi
       # determine if we should remove entries after nvjson.sh run
-      if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && "$get_cf_account_id" ]]; then
+      if [[ "$get_cf_dnsapi_global" && "$get_cf_token" && ! $(is_default_token "$get_cf_token") && "$get_cf_account_id" && ! $(is_default_account_id "$get_cf_account_id") ]]; then
         # CF DNS API for acmetool.sh/acme.sh exists already
         # want to backup existing credentials /etc/centminmod/cf-dns-api-nvjson.ini
         if [ ! -f /etc/centminmod/cf-dns-api-nvjson.ini ]; then
@@ -450,6 +503,13 @@ create_vhost() {
           echo "configured /etc/centminmod/acmetool-config.ini"
           cat /etc/centminmod/acmetool-config.ini
         fi
+      else
+        echo "----------------------------------------------------------------"
+        echo "Error: CF_Token and/or CF_Account_ID not properly configured"
+        echo "       check your vhost-config.json set values for:"
+        echo "       cloudflare-accountid"
+        echo "       cloudflare-api-token"
+        echo "----------------------------------------------------------------"
       fi
     fi
     # if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
