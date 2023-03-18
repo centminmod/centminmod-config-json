@@ -5,6 +5,16 @@
 # tool with additional setup functions that expand functionality and allow
 # users to create a more complete nginx vhost site configuration in an
 # unattended manner
+#
+# currently by default certain routines are running in dummy mode so only
+# echo displays the commands it intends to run rather than actually run
+# the commands and are controlled by these variables below. When set to 'y'
+# the will switch to live mode and actually run the commands:
+# 
+# NVJSON_RUN_VHOST_CREATION='n'
+# NVJSON_RUN_MYSQLADMIN_SHELL='n'
+# NVJSON_RUN_SETUP_ROBOTS_FILE='n'
+# NVJSON_RUN_SETUP_CRONJOBS='n'
 #############################################################################
 # run nvjson.sh script passing the desired vhost-config.json file on the 
 # command line
@@ -63,11 +73,17 @@
 #   "cronjobfile": "/path/to/cronjobfile.txt"
 # }
 #############################################################################
-VER='0.2'
+VER='0.3'
 DT=$(date +"%d%m%y-%H%M%S")
 DEBUG_MODE='y'
 SENSITIVE_INFO_MASK='n'
 
+# variables control whether specific routines actually run or just
+# dummy run an echo command for
+NVJSON_RUN_VHOST_CREATION='n'
+NVJSON_RUN_MYSQLADMIN_SHELL='n'
+NVJSON_RUN_SETUP_ROBOTS_FILE='n'
+NVJSON_RUN_SETUP_CRONJOBS='n'
 #############################################################################
 # Cloudflare settings
 CF_DNS_IPFOUR_ONLY='y'
@@ -96,6 +112,24 @@ fi
 if [ ! -f /etc/centminmod/acmetool-config.ini ]; then
   touch /etc/centminmod/acmetool-config.ini
 fi
+
+is_valid_cronjob_format() {
+  local cronjob_file="$1"
+
+  while IFS= read -r line; do
+    if [[ -z "$line" || "$line" =~ ^\s*# ]]; then
+      # Ignore empty lines or comments
+      continue
+    fi
+
+    if ! echo "$line" | awk 'NF>=6' | grep -Eq '^(\*|[0-9]|(\/|[,-])*[0-9]+\s){5}'; then
+      echo "Invalid cronjob format found: $line"
+      return 1
+    fi
+  done < "$cronjob_file"
+
+  return 0
+}
 
 check_dns() {
   vhostname_dns="$1"
@@ -999,11 +1033,19 @@ create_vhost() {
       if [[ "$https" = 'yes' || "$https" = [yY] ]]; then
         # echo "/usr/bin/nv -d ${domain_name_label_nginx} -s $ngx_ssl_ca -u $ftp_pass_label"
         # /usr/bin/nv -d $domain_name_nginx -s $ngx_ssl_ca -u $ftp_pass
-        echo "/usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_label_nginx lived"
-        # /usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_nginx lived
+        if [[ "$NVJSON_RUN_VHOST_CREATION" = [yY] ]]; then
+          echo "/usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_label_nginx lived"
+          /usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_nginx lived
+        else
+          echo "/usr/local/src/centminmod/addons/acmetool.sh issue $domain_name_label_nginx lived"
+        fi
       else
-        echo "/usr/bin/nv -d ${domain_name_label_nginx} -s n -u $ftp_pass_label"
-        # /usr/bin/nv -d $domain_name_nginx -s n -u $ftp_pass
+        if [[ "$NVJSON_RUN_VHOST_CREATION" = [yY] ]]; then
+          echo "/usr/bin/nv -d ${domain_name_label_nginx} -s n -u $ftp_pass_label"
+          /usr/bin/nv -d $domain_name_nginx -s n -u $ftp_pass
+        else
+          echo "/usr/bin/nv -d ${domain_name_label_nginx} -s n -u $ftp_pass_label"
+        fi
       fi
       # enable cloudflare.conf include file
       if [[ "$cloudflare" = 'yes' || "$cloudflare" = [yY] ]] && [[ -f "/usr/local/nginx/conf/conf.d/$domain.conf" ]]; then
@@ -1054,7 +1096,12 @@ create_vhost() {
         echo
       fi
       if [[ "${dbname}" && "${dbuser}" && "${dbpass}" ]]; then
-        echo "/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $dbname $dbuser $dbpass"
+        if [[ "$NVJSON_RUN_MYSQLADMIN_SHELL" = [yY] ]]; then
+          echo "/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $dbname $dbuser $dbpass"
+          /usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $dbname $dbuser $dbpass
+        else
+          echo "/usr/local/src/centminmod/addons/mysqladmin_shell.sh createuserdb $dbname $dbuser $dbpass"
+        fi
         echo
       fi
     done
@@ -1067,9 +1114,19 @@ create_vhost() {
     echo
     # echo "copying $robotsfile to ${webroot}/robots.txt"
     if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
-      echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|${domain}|domain.com|g"
+      if [[ "$NVJSON_RUN_SETUP_ROBOTS_FILE" = [yY] ]]; then
+        echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|${domain}|domain.com|g"
+        \cp -af $robotsfile ${webroot}/robots.txt | sed -e "s|${domain}|domain.com|g"
+      else
+        echo "\cp -af $robotsfile ${webroot}/robots.txt" | sed -e "s|${domain}|domain.com|g"
+      fi
     else
-      echo "\cp -af $robotsfile ${webroot}/robots.txt"
+      if [[ "$NVJSON_RUN_SETUP_ROBOTS_FILE" = [yY] ]]; then
+        echo "\cp -af $robotsfile ${webroot}/robots.txt"
+        \cp -af $robotsfile ${webroot}/robots.txt
+      else
+        echo "\cp -af $robotsfile ${webroot}/robots.txt"
+      fi
     fi
   fi
   echo
@@ -1077,25 +1134,46 @@ create_vhost() {
   echo "Setup Cronjobs For: ${domain_name_label}"
   echo "---------------------------------------------------------------------"
   if [[ -f "$cronjobfile" || "$DEBUG_MODE" = [yY] ]]; then
+    if [[ -f "$cronjobfile" ]]; then
+      if is_valid_cronjob_format "$cronjobfile"; then
+        echo "Cronjob format is valid."
+      else
+        echo "Cronjob format is invalid."
+        # Exit the script or handle the error as needed
+        exit 1
+      fi
+    fi
     echo
     echo "setup $cronjobfile"
     echo "mkdir -p /etc/centminmod/cronjobs/"
     if [[ "$SENSITIVE_INFO_MASK" = [yY] ]]; then
-      echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
-      echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
-      echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
-      # mkdir -p /etc/centminmod/cronjobs/
-      # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-      # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-      # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      if [[ "$NVJSON_RUN_SETUP_CRONJOBS" = [yY] ]]; then
+        echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+        echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+        echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+        mkdir -p /etc/centminmod/cronjobs/
+        crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+        cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+        crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      else
+        echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+        echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+        echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\"" | sed -e "s|$domain|domain.com|g"
+      fi
     else
-      echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-      echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-      echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
-      # mkdir -p /etc/centminmod/cronjobs/
-      # crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-      # cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
-      # crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      if [[ "$NVJSON_RUN_SETUP_CRONJOBS" = [yY] ]]; then
+        echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+        echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+        echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+        mkdir -p /etc/centminmod/cronjobs/
+        crontab -l > "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+        cat "$cronjobfile" >> "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+        crontab "/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt"
+      else
+        echo "crontab -l > \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+        echo "cat \"$cronjobfile\" >> \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+        echo "crontab \"/etc/centminmod/cronjobs/nvjson-cronjoblist-before-${domain}-setup-${DT}.txt\""
+      fi
     fi
   fi
   echo
